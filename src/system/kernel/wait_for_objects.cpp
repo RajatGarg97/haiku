@@ -906,6 +906,18 @@ _kern_wait_for_objects(object_wait_info* infos, int numInfos, uint32 flags,
 //	#pragma mark - User syscalls
 
 
+static bool
+check_max_fds(int numFDs)
+{
+	if (numFDs <= 0)
+		return true;
+
+	struct io_context *context = get_current_io_context(false);
+	MutexLocker(&context->io_mutex);
+	return (size_t)numFDs <= context->table_size;
+}
+
+
 ssize_t
 _user_select(int numFDs, fd_set *userReadSet, fd_set *userWriteSet,
 	fd_set *userErrorSet, bigtime_t timeout, const sigset_t *userSigMask)
@@ -917,7 +929,7 @@ _user_select(int numFDs, fd_set *userReadSet, fd_set *userWriteSet,
 
 	syscall_restart_handle_timeout_pre(timeout);
 
-	if (numFDs < 0)
+	if (numFDs < 0 || !check_max_fds(numFDs))
 		return B_BAD_VALUE;
 
 	if ((userReadSet != NULL && !IS_USER_ADDRESS(userReadSet))
@@ -1013,6 +1025,9 @@ _user_poll(struct pollfd *userfds, int numFDs, bigtime_t timeout)
 			? syscall_restart_handle_timeout_post(result, timeout) : result;
 	}
 
+	if (!check_max_fds(numFDs))
+		return B_BAD_VALUE;
+
 	// copy parameters
 	if (userfds == NULL || !IS_USER_ADDRESS(userfds))
 		return B_BAD_ADDRESS;
@@ -1048,8 +1063,10 @@ _user_wait_for_objects(object_wait_info* userInfos, int numInfos, uint32 flags,
 {
 	syscall_restart_handle_timeout_pre(flags, timeout);
 
-	if (numInfos < 0)
+	if (numInfos < 0 || !check_max_fds(numInfos - sem_max_sems()
+			- port_max_ports() - thread_max_threads())) {
 		return B_BAD_VALUE;
+	}
 
 	if (numInfos == 0) {
 		// special case: no infos
