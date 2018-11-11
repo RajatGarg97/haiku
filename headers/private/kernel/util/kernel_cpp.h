@@ -22,25 +22,25 @@ extern const nothrow_t std::nothrow;
 typedef struct {} mynothrow_t;
 extern const mynothrow_t mynothrow;
 
-#ifndef __clang__
-extern void* operator new(size_t size) throw (std::bad_alloc);
-extern void* operator new[](size_t size) throw (std::bad_alloc);
-extern void* operator new(size_t size, const std::nothrow_t &) throw ();
-extern void* operator new[](size_t size, const std::nothrow_t &) throw ();
-extern void* operator new(size_t size, const mynothrow_t &) throw ();
-extern void* operator new[](size_t size, const mynothrow_t &) throw ();
-extern void operator delete(void *ptr) throw ();
-extern void operator delete[](void *ptr) throw ();
+#if __cplusplus >= 201402L
+#define _THROW(x)
+#define _NOEXCEPT noexcept
+#else
+#define _THROW(x) throw (x)
+#define _NOEXCEPT throw ()
 #endif
+extern void* operator new(size_t size) _THROW(std::bad_alloc);
+extern void* operator new[](size_t size) _THROW(std::bad_alloc);
+extern void* operator new(size_t size, const std::nothrow_t &) _NOEXCEPT;
+extern void* operator new[](size_t size, const std::nothrow_t &) _NOEXCEPT;
+extern void* operator new(size_t size, const mynothrow_t &) _NOEXCEPT;
+extern void* operator new[](size_t size, const mynothrow_t &) _NOEXCEPT;
+extern void operator delete(void *ptr) _NOEXCEPT;
+extern void operator delete[](void *ptr) _NOEXCEPT;
 
 #if __cplusplus >= 201402L
-
-inline void
-operator delete(void *ptr, size_t size) throw ()
-{
-	free(ptr);
-}
-
+extern void operator delete(void* ptr, std::size_t) _NOEXCEPT;
+extern void operator delete[](void* ptr, std::size_t) _NOEXCEPT;
 #endif // __cplusplus >= 201402L
 
 #endif	// #if _KERNEL_MODE

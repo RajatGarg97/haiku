@@ -24,6 +24,7 @@
 
 #include "Logger.h"
 #include "StorageUtils.h"
+#include "RepositoryUrlUtils.h"
 
 
 #undef B_TRANSLATION_CONTEXT
@@ -391,13 +392,15 @@ Model::Model()
 
 	// TODO: Fetch this from the web-app.
 	fSupportedLanguages.Add("en");
+	fSupportedLanguages.Add("es");
 	fSupportedLanguages.Add("de");
 	fSupportedLanguages.Add("fr");
+	fSupportedLanguages.Add("it");
 	fSupportedLanguages.Add("ja");
-	fSupportedLanguages.Add("es");
-	fSupportedLanguages.Add("zh");
 	fSupportedLanguages.Add("pt");
 	fSupportedLanguages.Add("ru");
+	fSupportedLanguages.Add("sk");
+	fSupportedLanguages.Add("zh");
 
 	if (!fSupportedLanguages.Contains(fPreferredLanguage)) {
 		// Force the preferred language to one of the currently supported
@@ -651,6 +654,11 @@ Model::SetShowDevelopPackages(bool show)
 // #pragma mark - information retrieval
 
 
+/*! Initially only superficial data is loaded from the server into the data
+    model of the packages.  When the package is viewed, additional data needs
+    to be populated including ratings.  This method takes care of that.
+*/
+
 void
 Model::PopulatePackage(const PackageInfoRef& package, uint32 flags)
 {
@@ -697,7 +705,7 @@ Model::PopulatePackage(const PackageInfoRef& package, uint32 flags)
 				BAutolock locker(&fLock);
 				package->ClearUserRatings();
 
-				int index = 0;
+				int32 index = 0;
 				while (true) {
 					BString name;
 					name << index++;
@@ -706,11 +714,19 @@ Model::PopulatePackage(const PackageInfoRef& package, uint32 flags)
 					if (items.FindMessage(name, &item) != B_OK)
 						break;
 
+					BString code;
+					if (item.FindString("code", &code) != B_OK) {
+						printf("corrupt user rating at index %" B_PRIi32 "\n",
+							index);
+						continue;
+					}
+
 					BString user;
 					BMessage userInfo;
 					if (item.FindMessage("user", &userInfo) != B_OK
 						|| userInfo.FindString("nickname", &user) != B_OK) {
-						// Ignore, we need the user name
+						printf("ignored user rating [%s] without a user "
+							"nickname\n", code.String());
 						continue;
 					}
 
@@ -723,7 +739,8 @@ Model::PopulatePackage(const PackageInfoRef& package, uint32 flags)
 					if (item.FindDouble("rating", &rating) != B_OK)
 						rating = -1;
 					if (comment.Length() == 0 && rating == -1) {
-						// No useful information given.
+						printf("rating [%s] has no comment or rating so will be"
+							"ignored\n", code.String());
 						continue;
 					}
 
@@ -731,11 +748,13 @@ Model::PopulatePackage(const PackageInfoRef& package, uint32 flags)
 					BString major = "?";
 					BString minor = "?";
 					BString micro = "";
+					double revision = -1;
 					BMessage version;
 					if (item.FindMessage("pkgVersion", &version) == B_OK) {
 						version.FindString("major", &major);
 						version.FindString("minor", &minor);
 						version.FindString("micro", &micro);
+						version.FindDouble("revision", &revision);
 					}
 					BString versionString = major;
 					versionString << ".";
@@ -744,15 +763,43 @@ Model::PopulatePackage(const PackageInfoRef& package, uint32 flags)
 						versionString << ".";
 						versionString << micro;
 					}
+					if (revision > 0) {
+						versionString << "-";
+						versionString << (int) revision;
+					}
+
+					BDateTime createTimestamp;
+					double createTimestampMillisF;
+					if (item.FindDouble("createTimestamp",
+						&createTimestampMillisF) == B_OK) {
+						double createTimestampSecsF =
+							createTimestampMillisF / 1000.0;
+						time_t createTimestampSecs =
+							(time_t) createTimestampSecsF;
+						createTimestamp.SetTime_t(createTimestampSecs);
+					}
+
 					// Add the rating to the PackageInfo
-					package->AddUserRating(
-						UserRating(UserInfo(user), rating,
-							comment, languageCode, versionString, 0, 0)
-					);
+					UserRating userRating = UserRating(UserInfo(user), rating,
+						comment, languageCode, versionString, 0, 0,
+						createTimestamp);
+					package->AddUserRating(userRating);
+
+					if (Logger::IsDebugEnabled()) {
+						printf("rating [%s] retrieved from server\n",
+							code.String());
+					}
+				}
+
+				if (Logger::IsDebugEnabled()) {
+					printf("did retrieve %" B_PRIi32 " user ratings for [%s]\n",
+						index - 1, packageName.String());
 				}
 			} else {
 				_MaybeLogJsonRpcError(info, "retrieve user ratings");
 			}
+		} else {
+			printf("unable to retrieve user ratings\n");
 		}
 	}
 
@@ -808,7 +855,7 @@ Model::_PopulatePackageChangelog(const PackageInfoRef& package)
 		}
 	} else {
 		fprintf(stdout, "unable to obtain the changelog for the package"
-			"[%s]\n", packageName.String());
+			" [%s]\n", packageName.String());
 	}
 }
 
@@ -1013,20 +1060,6 @@ Model::_NotifyAuthorizationChanged()
 }
 
 
-// temporary - should not be required once the repo info url is used.
-static void
-normalize_repository_base_url(BUrl& url)
-{
-	if (url.Protocol() == "https")
-		url.SetProtocol("http");
-
-	BString path(url.Path());
-
-	if (path.EndsWith("/"))
-		url.SetPath(path.Truncate(path.Length() - 1));
-}
-
-
 void
 Model::ForAllDepots(void (*func)(const DepotInfo& depot, void* context),
 	void* context)
@@ -1038,21 +1071,28 @@ Model::ForAllDepots(void (*func)(const DepotInfo& depot, void* context),
 }
 
 
-// TODO; should use the repo.info url and not the base url.
+/*! This method will find the stored 'DepotInfo' that correlates to the
+    supplied 'url' or 'baseUrl' and will invoke the mapper function in
+    order to get a replacement for the 'DepotInfo'.  The two URLs are
+    different.  The 'url' is a unique identifier for the repository that
+    holds across mirrors.  The 'baseUrl' is the URL stem that was used
+    to access the repository data in the first place.  The 'baseUrl' is
+    a legacy construct that exists from a time where the identifying
+    'url' was not being relayed properly.
+*/
 
 void
-Model::ReplaceDepotByUrl(const BString& url,
+Model::ReplaceDepotByUrl(
+	const BString& URL,
+	const BString& baseURL,
+		// deprecated
 	DepotMapper* depotMapper, void* context)
 {
-	BUrl filterUrl(url);
-	normalize_repository_base_url(filterUrl);
-
 	for (int32 i = 0; i < fDepots.CountItems(); i++) {
 		DepotInfo depotInfo = fDepots.ItemAtFast(i);
-		BUrl depotUrlNormalized(depotInfo.BaseURL());
-		normalize_repository_base_url(depotUrlNormalized);
 
-		if (filterUrl == depotUrlNormalized) {
+		if (RepositoryUrlUtils::EqualsOnUrlOrBaseUrl(URL, depotInfo.URL(),
+			baseURL, depotInfo.BaseURL())) {
 			BAutolock locker(&fLock);
 			fDepots.Replace(i, depotMapper->MapDepot(depotInfo, context));
 		}

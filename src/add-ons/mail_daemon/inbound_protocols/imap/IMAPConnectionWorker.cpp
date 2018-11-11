@@ -377,8 +377,6 @@ public:
 			if (status != B_OK)
 				return status;
 
-			std::vector<uint32> uidsToFetch;
-
 			// Determine how much we need to download
 			// TODO: also retrieve the header size, and only take the body
 			// size into account if it's below the limit -- that does not
@@ -735,13 +733,16 @@ IMAPConnectionWorker::_Worker()
 		CommandDeleter deleter(*this, command);
 
 		status_t status = _Connect();
-		if (status != B_OK)
+		if (status != B_OK) {
+			fOwner.WorkerQuit(this);
 			return status;
+		}
 
 		status = command->Process(*this);
-		if (status != B_OK)
+		if (status != B_OK) {
+			fOwner.WorkerQuit(this);
 			return status;
-
+		}
 		if (!command->IsDone()) {
 			deleter.Detach();
 			command->SetContinuation();
@@ -867,6 +868,7 @@ void
 IMAPConnectionWorker::_Disconnect()
 {
 	fProtocol.Disconnect();
+	fSelectedBox = NULL;
 }
 
 

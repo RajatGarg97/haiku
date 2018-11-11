@@ -1,5 +1,5 @@
 /*
- * Copyright 2015-2016, Axel Dörfler, axeld@pinc-software.de.
+ * Copyright 2015-2018, Axel Dörfler, axeld@pinc-software.de.
  * Distributed under the terms of the MIT License.
  */
 
@@ -34,7 +34,8 @@ Job::Job(const char* name)
 	fToken((uint32)B_PREFERRED_TOKEN),
 	fLaunchStatus(B_NO_INIT),
 	fTarget(NULL),
-	fPendingLaunchDataReplies(0, false)
+	fPendingLaunchDataReplies(0, false),
+	fTeamListener(NULL)
 {
 	mutex_init(&fLaunchStatusLock, "launch status lock");
 }
@@ -87,17 +88,17 @@ Job::~Job()
 }
 
 
-::TeamRegistrator*
-Job::TeamRegistrator() const
+::TeamListener*
+Job::TeamListener() const
 {
-	return fTeamRegistrator;
+	return fTeamListener;
 }
 
 
 void
-Job::SetTeamRegistrator(::TeamRegistrator* registrator)
+Job::SetTeamListener(::TeamListener* listener)
 {
-	fTeamRegistrator = registrator;
+	fTeamListener = listener;
 }
 
 
@@ -461,6 +462,9 @@ Job::HandleGetLaunchData(BMessage* message)
 	if (IsLaunched())
 		return _SendLaunchDataReply(message);
 
+	if (!IsEnabled())
+		return B_NOT_ALLOWED;
+
 	return fPendingLaunchDataReplies.AddItem(message) ? B_OK : B_NO_MEMORY;
 }
 
@@ -693,8 +697,8 @@ Job::_Launch(const char* signature, entry_ref* ref, int argCount,
 		if (result == B_OK) {
 			resume_thread(mainThread);
 
-			if (fTeamRegistrator != NULL)
-				fTeamRegistrator->RegisterTeam(this);
+			if (fTeamListener != NULL)
+				fTeamListener->TeamLaunched(this, result);
 		} else
 			kill_thread(mainThread);
 	}

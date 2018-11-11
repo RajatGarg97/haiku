@@ -40,6 +40,17 @@ AddHaikuImagePackages [ FFilterByBuildFeatures
 		tar tcpdump unzip wget which zip
 	}@
 ] ;
+AddHaikuImageSourcePackages [ FFilterByBuildFeatures
+	bash bc coreutils
+
+	regular_image @{
+		ctags expat ffmpeg findutils gawk grep gutenprint
+		gzip
+		less libicns
+		sed sharutils
+		tar wget which
+	}@
+] ;
 if $(HAIKU_PACKAGING_ARCHS[1]) != x86_gcc2 {
 	AddHaikuImagePackages [ FFilterByBuildFeatures gcc_syslibs ] ;
 }
@@ -105,9 +116,9 @@ include [ FDirName $(HAIKU_BUILD_RULES_DIR) images HaikuImage ] ;
 include [ FDirName $(HAIKU_BUILD_RULES_DIR) images NetBootArchive ] ;
 include [ FDirName $(HAIKU_BUILD_RULES_DIR) images FloppyBootImage ] ;
 include [ FDirName $(HAIKU_BUILD_RULES_DIR) images CDBootImage ] ;
-include [ FDirName $(HAIKU_BUILD_RULES_DIR) images CDBootPPCImage ] ;
 include [ FDirName $(HAIKU_BUILD_RULES_DIR) images HaikuCD ] ;
 include [ FDirName $(HAIKU_BUILD_RULES_DIR) images AnybootImage ] ;
+include [ FDirName $(HAIKU_BUILD_RULES_DIR) images MMCImage ] ;
 
 # Check whether all requested optional packages do actually exist.
 local package ;

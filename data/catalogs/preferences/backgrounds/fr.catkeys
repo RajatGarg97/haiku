@@ -1,4 +1,4 @@
-1	french	x-vnd.Haiku-Backgrounds	1458061718
+1	french	x-vnd.Haiku-Backgrounds	681978856
 Backgrounds	System name		Fonds d’écran
 X:	Main View		X :
 Setting the background image failed:	Main View		La configuration de l'image de fond a échoué :
@@ -6,6 +6,7 @@ Resolution: 	Image Filepanel		Résolution :
 pick one	Main View		choisir
 Default	Main View		Défaut
 Center	Main View		Centré
+Folder: %path	Main View		Dossier : %path
 Manual	Main View		Placement manuel
 Set background image error	Main View		Réglage de l'image d'arrière-plan en erreur
 Default folder	Main View		Dossier par défaut
@@ -15,7 +16,6 @@ All workspaces	Main View		Tous les espaces de travail
 Icon label outline	Main View		Contour des étiquettes des icônes
 Other…	Main View		Autre…
 Current workspace	Main View		Espace de travail courant
-Folder: 	Main View		Dossier : 
 Apply	Main View		Appliquer
 Other folder…	Main View		Autre dossier…
 Y:	Main View		Y :

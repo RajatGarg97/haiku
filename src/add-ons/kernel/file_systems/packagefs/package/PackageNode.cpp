@@ -11,11 +11,13 @@
 
 #include "DebugSupport.h"
 #include "Package.h"
+#include "Utils.h"
 
 
 PackageNode::PackageNode(Package* package, mode_t mode)
 	:
 	fPackage(package),
+	fPackageFlags(package != NULL ? package->Flags() : 0),
 	fParent(NULL),
 	fName(),
 	fMode(mode),
@@ -100,4 +102,19 @@ void
 PackageNode::UnsetIndexCookie(void* attributeCookie)
 {
 	((PackageNodeAttribute*)attributeCookie)->SetIndexCookie(NULL);
+}
+
+
+bool
+PackageNode::HasPrecedenceOver(const PackageNode* other) const
+{
+	const bool isSystemPkg = (fPackageFlags
+			& BPackageKit::B_PACKAGE_FLAG_SYSTEM_PACKAGE) != 0,
+		otherIsSystemPkg = (other->fPackageFlags
+			& BPackageKit::B_PACKAGE_FLAG_SYSTEM_PACKAGE) != 0;
+	if (isSystemPkg && !otherIsSystemPkg)
+		return true;
+	if (!isSystemPkg && otherIsSystemPkg)
+		return false;
+	return fModifiedTime > other->fModifiedTime;
 }

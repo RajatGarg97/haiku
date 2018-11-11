@@ -9,7 +9,7 @@
 
 #include <Catalog.h>
 #include <MediaTrack.h>
-#include <MessageFormat.h>
+#include <StringFormat.h>
 #include <stdio.h>
 
 #undef B_TRANSLATION_CONTEXT
@@ -30,7 +30,7 @@ MediaFileInfo::LoadInfo(BMediaFile* file)
 
 	BMediaTrack* track;
 	media_format format;
-	memset(&format, 0, sizeof(format));
+	format.Clear();
 	media_codec_info codecInfo;
 	bool audioDone(false), videoDone(false);
 	bigtime_t audioDuration = 0;
@@ -53,11 +53,11 @@ MediaFileInfo::LoadInfo(BMediaFile* file)
 		if (ret != B_OK)
 			return ret;
 
-		static BMessageFormat frameFormat(B_TRANSLATE(
+		static BStringFormat frameFormat(B_TRANSLATE(
 			"{0, plural, one{# frame} other{# frames}}"));
 
 		if (format.IsVideo()) {
-			memset(&format, 0, sizeof(format));
+			format.Clear();
 			format.type = B_MEDIA_RAW_VIDEO;
 
 			ret = track->DecodedFormat(&format);
@@ -87,7 +87,7 @@ MediaFileInfo::LoadInfo(BMediaFile* file)
 			videoDone = true;
 
 		} else if (format.IsAudio()) {
-			memset(&format, 0, sizeof(format));
+			format.Clear();
 			format.type = B_MEDIA_RAW_AUDIO;
 			ret = track->DecodedFormat(&format);
 			if (ret != B_OK)
@@ -97,12 +97,12 @@ MediaFileInfo::LoadInfo(BMediaFile* file)
 
 			BString details;
 			if (bytesPerSample == 1 || bytesPerSample == 2) {
-				static BMessageFormat bitFormat(
+				static BStringFormat bitFormat(
 					B_TRANSLATE("{0, plural, one{# bit} other{# bits}}"));
 				bitFormat.Format(details, bytesPerSample * 8);
 				details.SetToFormat(B_TRANSLATE("%d bit "), bytesPerSample * 8);
 			} else {
-				static BMessageFormat bitFormat(
+				static BStringFormat bitFormat(
 					B_TRANSLATE("{0, plural, one{# byte} other{# bytes}}"));
 				bitFormat.Format(details, bytesPerSample);
 			}

@@ -17,6 +17,7 @@
 #include <SpaceLayoutItem.h>
 
 #include "BitmapView.h"
+#include "HaikuDepotConstants.h"
 #include "MainWindow.h"
 #include "MarkupTextView.h"
 #include "MessagePackageListener.h"
@@ -30,7 +31,8 @@
 
 static const rgb_color kLightBlack = (rgb_color){ 60, 60, 60, 255 };
 
-static BitmapRef sInstalledIcon(new(std::nothrow) SharedBitmap(504), true);
+static BitmapRef sInstalledIcon(new(std::nothrow)
+	SharedBitmap(RSRC_INSTALLED), true);
 
 
 // #pragma mark - PackageView
@@ -49,7 +51,10 @@ public:
 		SetHighUIColor(B_LIST_ITEM_TEXT_COLOR);
 		SetEventMask(B_POINTER_EVENTS);
 
+		// Featured icon package should be scaled to 64x64
 		fIconView = new BitmapView("package icon view");
+		fIconView->SetExplicitMinSize(BSize(64, 64));
+
 		fInstalledIconView = new BitmapView("installed icon view");
 		fTitleView = new BStringView("package title view", "");
 		fPublisherView = new BStringView("package publisher view", "");
@@ -343,7 +348,7 @@ private:
 
 FeaturedPackagesView::FeaturedPackagesView()
 	:
-	BView("featured package view", 0)
+	BView(B_TRANSLATE("Featured packages"), 0)
 {
 	BGroupLayout* layout = new BGroupLayout(B_VERTICAL);
 	SetLayout(layout);

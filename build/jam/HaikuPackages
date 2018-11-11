@@ -2,7 +2,9 @@
 # subdirectory.
 local packages = [ FFilterByBuildFeatures
 	HaikuDevel
+	HaikuExtras
 	HaikuLoader
+	HaikuSource
 	HaikuUserguide
 	HaikuWelcome
 	MakefileEngine

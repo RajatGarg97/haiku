@@ -13,6 +13,7 @@
 
 #include <KernelExport.h>
 #include <image.h>
+#include <kernel/heap.h>
 
 #include <util/BitUtils.h>
 
@@ -119,23 +120,25 @@ driver_printf(const char *format, ...)
 }
 
 
-static void
+static int
 driver_vprintf_etc(const char *extra, const char *format, va_list vl)
 {
 	char buf[256];
-	vsnprintf(buf, sizeof(buf), format, vl);
+	int ret = vsnprintf(buf, sizeof(buf), format, vl);
 
 	if (extra)
 		dprintf("[%s] (%s) %s", gDriverName, extra, buf);
 	else
 		dprintf("[%s] %s", gDriverName, buf);
+
+	return ret;
 }
 
 
-void
+int
 driver_vprintf(const char *format, va_list vl)
 {
-	driver_vprintf_etc(NULL, format, vl);
+	return driver_vprintf_etc(NULL, format, vl);
 }
 
 
@@ -199,7 +202,7 @@ device_get_children(device_t dev, device_t **devlistp, int *devcountp)
 	while ((child = list_get_next_item(&dev->children, child)) != NULL) {
 		count++;
 	}
-	
+
 	list = malloc(count * sizeof(device_t));
 	if (!list)
 		return (ENOMEM);
@@ -272,7 +275,6 @@ device_get_flags(device_t dev)
 int
 device_set_driver(device_t dev, driver_t *driver)
 {
-	device_method_signature_t method = NULL;
 	int i;
 
 	dev->softc = malloc(driver->softc_size);
@@ -282,7 +284,7 @@ device_set_driver(device_t dev, driver_t *driver)
 	memset(dev->softc, 0, driver->softc_size);
 	dev->driver = driver;
 
-	for (i = 0; method == NULL && driver->methods[i].name != NULL; i++) {
+	for (i = 0; driver->methods[i].name != NULL; i++) {
 		device_method_t *mth = &driver->methods[i];
 
 		if (strcmp(mth->name, "device_probe") == 0)
@@ -317,6 +319,8 @@ device_set_driver(device_t dev, driver_t *driver)
 			dev->methods.bus_print_child = (void *)mth->method;
 		else if (!strcmp(mth->name, "bus_read_ivar"))
 			dev->methods.bus_read_ivar = (void *)mth->method;
+		else if (!strcmp(mth->name, "bus_get_dma_tag"))
+			dev->methods.bus_get_dma_tag = (void *)mth->method;
 		else
 			panic("device_set_driver: method %s not found\n", mth->name);
 
@@ -449,7 +453,7 @@ device_attach(device_t device)
 	if (result == 0)
 		atomic_or(&device->flags, DEVICE_ATTACHED);
 
-	if (result == 0)
+	if (result == 0 && HAIKU_DRIVER_REQUIRES(FBSD_WLAN_FEATURE))
 		result = start_wlan(device);
 
 	return result;
@@ -463,11 +467,11 @@ device_detach(device_t device)
 		return B_ERROR;
 
 	if ((atomic_and(&device->flags, ~DEVICE_ATTACHED) & DEVICE_ATTACHED) != 0
-		&& device->methods.detach != NULL) {
-		int result = B_OK;
-
-		result = stop_wlan(device);
-		if (result != 0) {
+			&& device->methods.detach != NULL) {
+		int result = 0;
+		if (HAIKU_DRIVER_REQUIRES(FBSD_WLAN_FEATURE))
+			result = stop_wlan(device);
+		if (result != 0 && result != B_BAD_VALUE) {
 			atomic_or(&device->flags, DEVICE_ATTACHED);
 			return result;
 		}
@@ -591,6 +595,7 @@ printf(const char *format, ...)
 }
 
 
+#ifndef __clang__
 int
 ffs(int value)
 {
@@ -604,6 +609,7 @@ ffs(int value)
 
 	return i;
 }
+#endif
 
 
 int
@@ -615,17 +621,28 @@ resource_int_value(const char *name, int unit, const char *resname,
 }
 
 
+int
+resource_disabled(const char *name, int unit)
+{
+	int error, value;
+
+	error = resource_int_value(name, unit, "disabled", &value);
+	if (error)
+	       return (0);
+	return (value);
+}
+
+
 void *
 _kernel_malloc(size_t size, int flags)
 {
-	// our kernel malloc() is insufficient, must handle M_WAIT
-
 	// According to the FreeBSD kernel malloc man page the allocator is expected
 	// to return power of two aligned addresses for allocations up to one page
 	// size. While it also states that this shouldn't be relied upon, at least
 	// bus_dmamem_alloc expects it and drivers may depend on it as well.
 	void *ptr
-		= memalign(size >= PAGESIZE ? PAGESIZE : next_power_of_2(size), size);
+		= memalign_etc(size >= PAGESIZE ? PAGESIZE : next_power_of_2(size), size,
+			(flags & M_NOWAIT) ? HEAP_DONT_WAIT_FOR_MEMORY : 0);
 	if (ptr == NULL)
 		return NULL;
 

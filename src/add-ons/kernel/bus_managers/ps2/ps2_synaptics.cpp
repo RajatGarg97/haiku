@@ -29,6 +29,21 @@
 #define REAL_MAX_PRESSURE		100
 #define MAX_PRESSURE			200
 
+enum {
+	kIdentify = 0x00,
+	kReadModes = 0x01,
+	kReadCapabilities = 0x02,
+	kReadModelId = 0x03,
+	kReadSerialNumberPrefix = 0x06,
+	kReadSerialModelSuffix = 0x07,
+	kReadResolutions = 0x08,
+	kExtendedModelId = 0x09,
+	kContinuedCapabilities = 0x0C,
+	kMaximumCoordinates = 0x0D,
+	kDeluxeLedInfo = 0x0E,
+	kMinimumCoordinates = 0x0F,
+	kTrackpointQuirk = 0x10
+};
 
 static hardware_specs gHardwareSpecs;
 
@@ -84,6 +99,26 @@ set_touchpad_mode(ps2_dev *dev, uint8 mode)
 
 
 static status_t
+get_information_query(ps2_dev *dev, uint8 extendedQueries, uint8 query,
+	uint8 val[3])
+{
+	if (query == kTrackpointQuirk) {
+		// Special case: this information query is not reported in the
+		// "extended queries", but is still supported when the touchpad has
+		// a pass-through port.
+		if (!sTouchpadInfo.capPassThrough)
+			return B_NOT_SUPPORTED;
+	} else if (query > extendedQueries + 8)
+		return B_NOT_SUPPORTED;
+
+	status_t error = send_touchpad_arg(dev, query);
+	if (error != B_OK)
+		return error;
+	return ps2_dev_command(dev, 0xE9, NULL, 0, val, 3);
+}
+
+
+static status_t
 get_synaptics_movment(synaptics_cookie *cookie, mouse_movement *movement)
 {
 	status_t status;
@@ -125,8 +160,39 @@ get_synaptics_movment(synaptics_cookie *cookie, mouse_movement *movement)
 	 	event.wValue = wValue;
 	 	event.gesture = false;
 
+		// Clickpad pretends that all clicks on the touchpad are middle clicks.
+		// Pass them to userspace as left clicks instead.
+		if (sTouchpadInfo.capClickPad)
+			event.buttons |= ((event_buffer[0] ^ event_buffer[3]) & 0x01);
+
 		if (sTouchpadInfo.capMiddleButton || sTouchpadInfo.capFourButtons)
 			event.buttons |= ((event_buffer[0] ^ event_buffer[3]) & 0x01) << 2;
+
+		if (sTouchpadInfo.nExtendedButtons > 0) {
+			if (((event_buffer[0] ^ event_buffer[3]) & 0x02) != 0) {
+				// This packet includes extended buttons state. The state is
+				// only reported once when one of the buttons is pressed or
+				// released, so we must keep track of the buttons state.
+
+				// The values replace the lowest bits of the X and Y coordinates
+				// in the packet, we need to extract them from there.
+
+				bool pressed;
+				for (int button = 0; button < sTouchpadInfo.nExtendedButtons;
+						button++) {
+					// Even buttons are in the X byte
+					pressed = event_buffer[4 + button % 2] >> button / 2 & 0x1;
+					if (pressed) {
+						sTouchpadInfo.extendedButtonsState |= 1 << button;
+					} else {
+						sTouchpadInfo.extendedButtonsState &= ~(1 << button);
+					}
+				}
+			}
+
+			event.buttons |= sTouchpadInfo.extendedButtonsState
+				<< sTouchpadInfo.firstExtendedButton;
+		}
  	} else {
  		bool finger = event_buffer[0] >> 5 & 1;
  		if (finger) {
@@ -159,13 +225,17 @@ static void
 query_capability(ps2_dev *dev)
 {
 	uint8 val[3];
-	send_touchpad_arg(dev, 0x02);
-	ps2_dev_command(dev, 0xE9, NULL, 0, val, 3);
+	uint8 nExtendedQueries = 0;
 
-	sTouchpadInfo.capExtended = val[0] >> 7 & 1;
+	get_information_query(dev, nExtendedQueries, kReadCapabilities, val);
+
 	TRACE("SYNAPTICS: extended mode %2x\n", val[0] >> 7 & 1);
+	sTouchpadInfo.capExtended = val[0] >> 7 & 1;
+	TRACE("SYNAPTICS: extended queries %2x\n", val[0] >> 4 & 7);
+	nExtendedQueries = val[0] >> 4 & 7;
 	TRACE("SYNAPTICS: middle button %2x\n", val[0] >> 2 & 1);
 	sTouchpadInfo.capMiddleButton = val[0] >> 2 & 1;
+
 	TRACE("SYNAPTICS: sleep mode %2x\n", val[2] >> 4 & 1);
 	sTouchpadInfo.capSleep = val[2] >> 4 & 1;
 	TRACE("SYNAPTICS: four buttons %2x\n", val[2] >> 3 & 1);
@@ -176,6 +246,42 @@ query_capability(ps2_dev *dev)
 	sTouchpadInfo.capPalmDetection = val[2] & 1;
 	TRACE("SYNAPTICS: pass through %2x\n", val[2] >> 7 & 1);
 	sTouchpadInfo.capPassThrough = val[2] >> 7 & 1;
+
+	if (get_information_query(dev, nExtendedQueries, kExtendedModelId, val)
+			!= B_OK) {
+		// "Extended Model ID" is not supported, so there cannot be extra
+		// buttons.
+		sTouchpadInfo.nExtendedButtons = 0;
+		sTouchpadInfo.firstExtendedButton = 0;
+		sTouchpadInfo.capClickPad = false;
+		return;
+	}
+
+	sTouchpadInfo.capClickPad = (val[0] >> 5 & 1) | (val[1] >> 0 & 1);
+	TRACE("SYNAPTICS: clickpad %x\n", sTouchpadInfo.capClickPad);
+
+	TRACE("SYNAPTICS: extended buttons %2x\n", val[1] >> 4 & 15);
+	sTouchpadInfo.nExtendedButtons = val[1] >> 4 & 15;
+	sTouchpadInfo.extendedButtonsState = 0;
+
+	if (sTouchpadInfo.capMiddleButton)
+		sTouchpadInfo.firstExtendedButton = 3;
+	else
+		sTouchpadInfo.firstExtendedButton = 2;
+
+	// Capability 0x10 is not documented in the Synaptics Touchpad interfacing
+	// guide (at least the versions I could find), but we got the information
+	// from Linux patches: https://lkml.org/lkml/2015/2/6/621
+	if (get_information_query(dev, nExtendedQueries, kTrackpointQuirk, val)
+			!= B_OK)
+		return;
+
+	// Workaround for Thinkpad use of the extended buttons: they are
+	// used as buttons for the trackpoint, so they should be reported
+	// as buttons 0, 1, 2 rather than 3, 4, 5.
+	TRACE("SYNAPTICS: alternate buttons %2x\n", val[0] >> 0 & 1);
+	if (val[0] >> 0 & 1)
+		sTouchpadInfo.firstExtendedButton = 0;
 }
 
 
@@ -266,8 +372,10 @@ passthrough_command(ps2_dev *dev, uint8 cmd, const uint8 *out, int outCount,
 finalize:	
 	status_t statusOfEnable = ps2_dev_command(dev->parent_dev, PS2_CMD_ENABLE,
 			NULL, 0, NULL, 0);
-	if (statusOfEnable != B_OK)
-		TRACE("SYNAPTICS: enabling of parent failed: 0x%lx.\n", statusOfEnable);
+	if (statusOfEnable != B_OK) {
+		TRACE("SYNAPTICS: enabling of parent failed: 0x%" B_PRIx32 ".\n",
+			statusOfEnable);
+	}
 
 	return status != B_OK ? status : statusOfEnable;
 }
@@ -288,12 +396,7 @@ probe_synaptics(ps2_dev *dev)
 
 	// Request "Identify touchpad"
 	// The touchpad will delay this, until it's ready and calibrated.
-	status = send_touchpad_arg(dev, 0x00);
-	if (status != B_OK)
-		return status;
-
-	// "Status request" (executes "Identify touchpad")
-	status = ps2_dev_command(dev, 0xE9, NULL, 0, val, 3);
+	status = get_information_query(dev, 0, kIdentify, val);
 	if (status != B_OK)
 		return status;
 
@@ -522,7 +625,7 @@ synaptics_ioctl(void *_cookie, uint32 op, void *buffer, size_t length)
 				sizeof(bigtime_t));
 
 		default:
-			TRACE("SYNAPTICS: unknown opcode: %ld\n", op);
+			TRACE("SYNAPTICS: unknown opcode: %" B_PRIu32 "\n", op);
 			return B_DEV_INVALID_IOCTL;
 	}
 }

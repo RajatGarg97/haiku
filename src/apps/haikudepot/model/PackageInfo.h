@@ -1,6 +1,6 @@
 /*
  * Copyright 2013-2014, Stephan Aßmus <superstippi@gmx.de>.
- * Copyright 2016-2017, Andrew Lindesay <apl@lindesay.co.nz>.
+ * Copyright 2016-2018, Andrew Lindesay <apl@lindesay.co.nz>.
  * All rights reserved. Distributed under the terms of the MIT License.
  */
 #ifndef PACKAGE_INFO_H
@@ -12,6 +12,7 @@
 #include <Referenceable.h>
 #include <package/PackageInfo.h>
 
+#include "DateTime.h"
 #include "List.h"
 #include "PackageInfoListener.h"
 #include "SharedBitmap.h"
@@ -51,7 +52,8 @@ public:
 									const BString& comment,
 									const BString& language,
 									const BString& packageVersion,
-									int32 upVotes, int32 downVotes);
+									int32 upVotes, int32 downVotes,
+									const BDateTime& createTimestamp);
 								UserRating(const UserRating& other);
 
 			UserRating&			operator=(const UserRating& other);
@@ -73,6 +75,8 @@ public:
 									{ return fUpVotes; }
 			int32				DownVotes() const
 									{ return fDownVotes; }
+			const BDateTime&	CreateTimestamp() const
+									{ return fCreateTimestamp; }
 private:
 			UserInfo			fUserInfo;
 			float				fRating;
@@ -81,6 +85,7 @@ private:
 			BString				fPackageVersion;
 			int32				fUpVotes;
 			int32				fDownVotes;
+			BDateTime			fCreateTimestamp;
 };
 
 
@@ -426,6 +431,10 @@ public:
 			const BString&		BaseURL() const
 									{ return fBaseURL; }
 
+			void				SetURL(const BString& URL);
+			const BString&		URL() const
+									{ return fURL; }
+
 			void				SetWebAppRepositoryCode(const BString& code);
 			const BString&		WebAppRepositoryCode() const
 									{ return fWebAppRepositoryCode; }
@@ -441,6 +450,10 @@ private:
 			BString				fWebAppRepositoryCode;
 			BString				fWebAppRepositorySourceCode;
 			BString				fBaseURL;
+				// this is the URL at which the configured repository will be
+				// accessed to get data.
+			BString				fURL;
+				// this is actually a unique identifier for the repository.
 };
 
 

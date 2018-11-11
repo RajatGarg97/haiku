@@ -135,7 +135,7 @@ get_bios(void)
 	hence, if panel mode will be set using info from VBT, it will
 	be taken from primary card's VBIOS */
 	vbios.area = map_physical_memory("VBIOS mapping", kVBIOSAddress,
-		kVBIOSSize, B_ANY_KERNEL_ADDRESS, B_READ_AREA, (void**)&vbios.memory);
+		kVBIOSSize, B_ANY_KERNEL_ADDRESS, B_KERNEL_READ_AREA, (void**)&vbios.memory);
 
 	if (vbios.area < 0)
 		return false;
@@ -144,7 +144,7 @@ get_bios(void)
 		kVBIOSAddress, vbios.memory));
 
 	int vbtOffset = vbios.ReadWord(kVbtPointer);
-	if (vbtOffset >= kVBIOSSize) {
+	if ((vbtOffset + (int)sizeof(vbt_header)) >= kVBIOSSize) {
 		TRACE((DEVICE_NAME": bad VBT offset : 0x%x\n", vbtOffset));
 		delete_area(vbios.area);
 		return false;
@@ -156,7 +156,6 @@ get_bios(void)
 		delete_area(vbios.area);
 		return false;
 	}
-
 	return true;
 }
 

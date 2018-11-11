@@ -43,13 +43,13 @@ if $(TARGET_PACKAGING_ARCH) != x86_gcc2 {
 	if [ IsPackageAvailable gcc_syslibs ] {
 		ExtractBuildFeatureArchives gcc_syslibs :
 			file: base gcc_syslibs
-				libgcc_s.so: $(libDir)/libgcc_s.so
+				libgcc_s.so.1: $(libDir)/libgcc_s.so.1
 				libstdc++.so: $(libDir)/libstdc++.so
 				libsupc++.so: $(libDir)/libsupc++.so
 			;
 
 		EnableBuildFeatures gcc_syslibs ;
-	} else  {
+	} else {
 		Echo "gcc_syslibs not available for $(TARGET_PACKAGING_ARCH)" ;
 	}
 }
@@ -85,7 +85,7 @@ if [ IsPackageAvailable gcc_syslibs_devel ] {
 	}
 
 	EnableBuildFeatures gcc_syslibs_devel ;
-} else  {
+} else {
 	Echo "gcc_syslibs_devel not available for $(TARGET_PACKAGING_ARCH)" ;
 }
 
@@ -110,26 +110,8 @@ if [ IsPackageAvailable icu_devel ] {
 		;
 
 	EnableBuildFeatures icu ;
-} else  {
+} else {
 	Echo "ICU not available for $(TARGET_PACKAGING_ARCH)" ;
-}
-
-
-# curl
-if [ IsPackageAvailable curl_devel ] {
-	ExtractBuildFeatureArchives curl :
-		file: base curl
-			runtime: lib
-		file: devel curl_devel
-			depends: base
-			library:
-				$(developLibDir)/libcurl.so
-			headers: $(developHeadersDir) $(developHeadersDir)/curl
-		;
-
-	EnableBuildFeatures curl ;
-} else  {
-	Echo "Curl not available for $(TARGET_PACKAGING_ARCH)" ;
 }
 
 
@@ -394,7 +376,7 @@ if [ IsPackageAvailable haikuwebkit_devel ] {
 		file: devel haikuwebkit_devel
 			depends: base
 			libraries:
-				$(developLibDir)/libWebKit.so
+				$(developLibDir)/libWebKitLegacy.so
 			headers: $(developHeadersDir)
 		;
 
@@ -653,7 +635,7 @@ if [ IsPackageAvailable live555_devel ] {
 				$(developHeadersDir)/UsageEnvironment
 		;
 	EnableBuildFeatures live555 ;
-} else  {
+} else {
 	Echo "live555 not available for $(TARGET_PACKAGING_ARCH)" ;
 }
 
@@ -693,20 +675,18 @@ if [ IsPackageAvailable expat_devel ] {
 
 
 # gnu-efi
-if $(TARGET_PACKAGING_ARCH) = x86_64 {
-	if [ IsPackageAvailable gnu_efi_kernel ] {
-		ExtractBuildFeatureArchives gnuefi :
-			file: base gnu_efi_kernel
-				headers: develop/headers/gnuefi
-				headersProtocol: develop/headers/gnuefi/protocol
-				headersArch: develop/headers/gnuefi/$(TARGET_ARCH)
-				libdir: develop/lib/gnuefi
-			;
+if [ IsPackageAvailable gnu_efi_kernel ] {
+	ExtractBuildFeatureArchives gnuefi :
+		file: base gnu_efi_kernel
+			headers: develop/headers/gnuefi
+			headersProtocol: develop/headers/gnuefi/protocol
+			headersArch: develop/headers/gnuefi/$(TARGET_ARCH)
+			libdir: develop/lib/gnuefi
+		;
 
-		EnableBuildFeatures gnuefi ;
-	} else {
-		Echo "gnu_efi_kernel support not available on $(TARGET_PACKAGING_ARCH)" ;
-	}
+	EnableBuildFeatures gnuefi ;
+} else {
+	Echo "gnu_efi_kernel support not available on $(TARGET_PACKAGING_ARCH)" ;
 }
 
 

@@ -1,5 +1,5 @@
 /*
- * Copyright 2017, Andrew Lindesay <apl@lindesay.co.nz>.
+ * Copyright 2017-2018, Andrew Lindesay <apl@lindesay.co.nz>.
  * All rights reserved. Distributed under the terms of the MIT License.
  */
 
@@ -116,11 +116,20 @@ DepotMatchingRepositoryListener::Handle(DumpExportRepository* repository)
 		repositoryAndRepositorySource.repositorySource =
 			repository->RepositorySourcesItemAt(i);
 
-		// TODO; replace with the repo info url
-		BString* url = repositoryAndRepositorySource.repositorySource->Url();
+		BString* baseURL = repositoryAndRepositorySource
+			.repositorySource->Url();
+		BString* URL = repositoryAndRepositorySource
+			.repositorySource->RepoInfoUrl();
 
-		if (url->Length() > 0) {
-			fModel->ReplaceDepotByUrl(*url, this,
+		// to be simplified soon because there will no longer be a need to
+		// check for the baseURL.
+
+		if ((baseURL != NULL && !baseURL->IsEmpty())
+			|| (URL != NULL && !URL->IsEmpty())) {
+			fModel->ReplaceDepotByUrl(
+				URL == NULL ? BString() : *URL,
+				baseURL == NULL ? BString() : *baseURL,
+				this,
 				&repositoryAndRepositorySource);
 		}
 	}

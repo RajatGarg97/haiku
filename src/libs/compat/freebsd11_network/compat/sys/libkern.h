@@ -11,9 +11,12 @@
 
 
 extern int random(void);
+u_int read_random(void *, u_int);
+void arc4rand(void *ptr, u_int len, int reseed);
 uint32_t arc4random(void);
 
 static __inline int imax(int a, int b) { return (a > b ? a : b); }
+static __inline int imin(int a, int b) { return (a < b ? a : b); }
 
 extern int abs(int a);
 

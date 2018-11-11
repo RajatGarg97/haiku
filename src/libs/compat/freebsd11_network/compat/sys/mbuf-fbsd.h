@@ -25,71 +25,92 @@
  * LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
  * OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF
  * SUCH DAMAGE.
- *
- *	@(#)mbuf.h	8.5 (Berkeley) 2/19/95
- * $FreeBSD: src/sys/sys/mbuf.h,v 1.170.2.6 2006/03/23 23:24:32 sam Exp $
  */
 #ifndef _FBSD_COMPAT_SYS_MBUF_FBSD_H_
 #define _FBSD_COMPAT_SYS_MBUF_FBSD_H_
 
 /*
- * Set the m_data pointer of a newly-allocated mbuf (m_get/MGET) to place
- * an object of the specified size at the end of the mbuf, longword aligned.
+ * Return the address of the start of the buffer associated with an mbuf,
+ * handling external storage, packet-header mbufs, and regular data mbufs.
  */
-#define	M_ALIGN(m, len) do {						\
-	(m)->m_data += (MLEN - (len)) & ~(sizeof(long) - 1);		\
-} while (0)
+#define	M_START(m)							\
+	(((m)->m_flags & M_EXT) ? (m)->m_ext.ext_buf :			\
+	 ((m)->m_flags & M_PKTHDR) ? &(m)->m_pktdat[0] :		\
+	 &(m)->m_dat[0])
 
 /*
- * As above, for mbufs allocated with m_gethdr/MGETHDR
- * or initialized by M_COPY_PKTHDR.
+ * Return the size of the buffer associated with an mbuf, handling external
+ * storage, packet-header mbufs, and regular data mbufs.
  */
-#define	MH_ALIGN(m, len) do {						\
-	(m)->m_data += (MHLEN - (len)) & ~(sizeof(long) - 1);		\
-} while (0)
+#define	M_SIZE(m)							\
+	(((m)->m_flags & M_EXT) ? (m)->m_ext.ext_size :			\
+	 ((m)->m_flags & M_PKTHDR) ? MHLEN :				\
+	 MLEN)
 
 /*
-#define	MEXT_IS_REF(m)	(((m)->m_ext.ref_cnt != NULL)			\
-    && (*((m)->m_ext.ref_cnt) > 1))
+ * Set the m_data pointer of a newly allocated mbuf to place an object of the
+ * specified size at the end of the mbuf, longword aligned.
+ *
+ * NB: Historically, we had M_ALIGN(), MH_ALIGN(), and MEXT_ALIGN() as
+ * separate macros, each asserting that it was called at the proper moment.
+ * This required callers to themselves test the storage type and call the
+ * right one.  Rather than require callers to be aware of those layout
+ * decisions, we centralize here.
  */
-#define MEXT_IS_REF(m)	0
+static __inline void
+m_align(struct mbuf *m, int len)
+{
+#ifdef INVARIANTS
+	const char *msg = "%s: not a virgin mbuf";
+#endif
+	int adjust;
+
+	KASSERT(m->m_data == M_START(m), (msg, __func__));
+
+	adjust = M_SIZE(m) - len;
+	m->m_data += adjust &~ (sizeof(long)-1);
+}
+
+#define	M_ALIGN(m, len)		m_align(m, len)
+#define	MH_ALIGN(m, len)	m_align(m, len)
+#define	MEXT_ALIGN(m, len)	m_align(m, len)
 
 /*
- * Evaluate TRUE if it's safe to write to the mbuf m's data region (this
- * can be both the local data payload, or an external buffer area,
- * depending on whether M_EXT is set).
+ * Evaluate TRUE if it's safe to write to the mbuf m's data region (this can
+ * be both the local data payload, or an external buffer area, depending on
+ * whether M_EXT is set).
  */
+#define	M_WRITABLE(m)	(!((m)->m_flags & M_RDONLY) &&			\
+			 (!(((m)->m_flags & M_EXT)) ||			\
+			 (m_extrefcnt(m) == 1)))
 
 /*
-#define	M_WRITABLE(m)	(!((m)->m_flags & M_RDONLY) && (!((m)->m_flags  \
-			    & M_EXT) || !MEXT_IS_REF(m)))
- */
-#define M_WRITABLE(m)	(!((m)->m_flags & M_EXT) || !MEXT_IS_REF(m))
-
-/*
- * Compute the amount of space available
- * before the current start of data in an mbuf.
+ * Compute the amount of space available before the current start of data in
+ * an mbuf.
  *
  * The M_WRITABLE() is a temporary, conservative safety measure: the burden
  * of checking writability of the mbuf data area rests solely with the caller.
+ *
+ * NB: In previous versions, M_LEADINGSPACE() would only check M_WRITABLE()
+ * for mbufs with external storage.  We now allow mbuf-embedded data to be
+ * read-only as well.
  */
 #define	M_LEADINGSPACE(m)						\
-	((m)->m_flags & M_EXT ?						\
-	    (M_WRITABLE(m) ? (m)->m_data - (m)->m_ext.ext_buf : 0):	\
-	    (m)->m_flags & M_PKTHDR ? (m)->m_data - (m)->m_pktdat :	\
-	    (m)->m_data - (m)->m_dat)
+	(M_WRITABLE(m) ? ((m)->m_data - M_START(m)) : 0)
 
 /*
  * Compute the amount of space available after the end of data in an mbuf.
  *
  * The M_WRITABLE() is a temporary, conservative safety measure: the burden
  * of checking writability of the mbuf data area rests solely with the caller.
+ *
+ * NB: In previous versions, M_TRAILINGSPACE() would only check M_WRITABLE()
+ * for mbufs with external storage.  We now allow mbuf-embedded data to be
+ * read-only as well.
  */
 #define	M_TRAILINGSPACE(m)						\
-	((m)->m_flags & M_EXT ?						\
-	    (M_WRITABLE(m) ? (m)->m_ext.ext_buf + (m)->m_ext.ext_size	\
-		- ((m)->m_data + (m)->m_len) : 0) :			\
-	    &(m)->m_dat[MLEN] - ((m)->m_data + (m)->m_len))
+	(M_WRITABLE(m) ?						\
+		((M_START(m) + M_SIZE(m)) - ((m)->m_data + (m)->m_len)) : 0)
 
 /*
  * Arrange to prepend space of size plen to mbuf m.
@@ -113,5 +134,119 @@
 		_mm->m_pkthdr.len += _mplen;				\
 	*_mmp = _mm;							\
 } while (0)
+
+static __inline void
+m_clrprotoflags(struct mbuf *m)
+{
+	while (m) {
+		m->m_flags &= ~M_PROTOFLAGS;
+		m = m->m_next;
+	}
+}
+
+static inline u_int
+m_extrefcnt(struct mbuf *m)
+{
+	KASSERT(m->m_flags & M_EXT, ("%s: M_EXT missing", __func__));
+
+	return ((m->m_ext.ext_flags & EXT_FLAG_EMBREF) ? m->m_ext.ext_count :
+		*m->m_ext.ext_cnt);
+}
+
+/* mbufq */
+
+struct mbufq {
+	STAILQ_HEAD(, mbuf)	mq_head;
+	int			mq_len;
+	int			mq_maxlen;
+};
+
+static inline void
+mbufq_init(struct mbufq *mq, int maxlen)
+{
+	STAILQ_INIT(&mq->mq_head);
+	mq->mq_maxlen = maxlen;
+	mq->mq_len = 0;
+}
+
+static inline struct mbuf *
+mbufq_flush(struct mbufq *mq)
+{
+	struct mbuf *m;
+
+	m = STAILQ_FIRST(&mq->mq_head);
+	STAILQ_INIT(&mq->mq_head);
+	mq->mq_len = 0;
+	return (m);
+}
+
+static inline void
+mbufq_drain(struct mbufq *mq)
+{
+	struct mbuf *m, *n;
+
+	n = mbufq_flush(mq);
+	while ((m = n) != NULL) {
+		n = STAILQ_NEXT(m, m_stailqpkt);
+		m_freem(m);
+	}
+}
+
+static inline struct mbuf *
+mbufq_first(const struct mbufq *mq)
+{
+	return (STAILQ_FIRST(&mq->mq_head));
+}
+
+static inline struct mbuf *
+mbufq_last(const struct mbufq *mq)
+{
+	return (STAILQ_LAST(&mq->mq_head, mbuf, m_stailqpkt));
+}
+
+static inline int
+mbufq_full(const struct mbufq *mq)
+{
+	return (mq->mq_len >= mq->mq_maxlen);
+}
+
+static inline int
+mbufq_len(const struct mbufq *mq)
+{
+	return (mq->mq_len);
+}
+
+static inline int
+mbufq_enqueue(struct mbufq *mq, struct mbuf *m)
+{
+
+	if (mbufq_full(mq))
+		return (ENOBUFS);
+	STAILQ_INSERT_TAIL(&mq->mq_head, m, m_stailqpkt);
+	mq->mq_len++;
+	return (0);
+}
+
+static inline struct mbuf *
+mbufq_dequeue(struct mbufq *mq)
+{
+	struct mbuf *m;
+
+	m = STAILQ_FIRST(&mq->mq_head);
+	if (m) {
+		STAILQ_REMOVE_HEAD(&mq->mq_head, m_stailqpkt);
+		m->m_nextpkt = NULL;
+		mq->mq_len--;
+	}
+	return (m);
+}
+
+static inline void
+mbufq_prepend(struct mbufq *mq, struct mbuf *m)
+{
+
+	STAILQ_INSERT_HEAD(&mq->mq_head, m, m_stailqpkt);
+	mq->mq_len++;
+}
 
 #endif

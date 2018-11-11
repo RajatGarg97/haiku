@@ -204,8 +204,9 @@ SYSTEM_ADD_ONS_DRIVERS_NET = [ FFilterByBuildFeatures
 		aironetwifi atheroswifi
 		broadcom43xx
 		iprowifi2100 iprowifi2200 iprowifi3945 iprowifi4965
+		idualwifi7260
 		marvell88w8363 marvell88w8335
-		ralinkwifi
+		ralinkwifi realtekwifi
 		wavelanwifi
 	}@ # x86,x86_64
 ] ;
@@ -234,7 +235,7 @@ SYSTEM_ADD_ONS_FILE_SYSTEMS =
 	log_overlay
 	ntfs
 	packagefs
-	reiserfs@x86
+	reiserfs
 	udf
 	write_overlay
 ;

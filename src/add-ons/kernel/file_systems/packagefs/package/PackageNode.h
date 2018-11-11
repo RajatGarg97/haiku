@@ -73,6 +73,8 @@ public:
 	inline	void*				IndexCookieForAttribute(const StringKey& name)
 									const;
 
+			bool				HasPrecedenceOver(const PackageNode* other) const;
+
 			// conceptually protected, but actually declaring it so causes
 			// compilation issues when used with MethodDeleter in subclasses
 			void				NonVirtualVFSUninit()
@@ -82,6 +84,7 @@ public:
 
 protected:
 			Package*			fPackage;
+			uint32				fPackageFlags;
 			PackageDirectory*	fParent;
 			String				fName;
 			mode_t				fMode;

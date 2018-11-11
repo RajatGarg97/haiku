@@ -1,4 +1,4 @@
-1	dutch; flemish	x-vnd.Haiku-Shortcuts	1237826966
+1	dutch; flemish	x-vnd.Haiku-Shortcuts	372053878
 OK	ShortcutsWindow		Oké
 Shortcuts wasn't able to save your keyset.	ShortcutsWindow		Sneltoetsen was niet in staat om uw toetsencombinatie op te slaan.
 Cancel	ShortcutsWindow		Annuleren
@@ -8,7 +8,6 @@ Key	ShortcutsWindow		Toets
 Open KeySet…	ShortcutsWindow		Openen toetsencombinatie...
 Error, NULL state description?	ShortcutsSpec		Fout, NULL-statusbeschrijving?
 Revert to saved	ShortcutsWindow		Herstellen naar opgeslagen data
-Alt	ShortcutsSpec	Name for modifier on keyboard	Alt
 *InsertString \"Your Text Here\"	ShortcutsWindow		*VoegTekstIn \"Uw Tekst Hier\"
 *MouseUp	ShortcutsWindow		*MuisOmhoog
 (Choose application with file requester)	ShortcutsWindow		(Kies een toepassing met een bestandskiezer)
@@ -18,6 +17,7 @@ Shortcuts was couldn't open your KeySet file!	ShortcutsWindow		Sneltoetsen kon u
 Save	ShortcutsWindow		Opslaan
 *MouseButton 1	ShortcutsWindow		*Muisknop 1
 *MoveMouse +20 +0	ShortcutsWindow		*VerplaatsMuis +20 +0
+Save changes before closing?	ShortcutsWindow		Wijzigingen opslaan alvorens te sluiten?
 Remove selected shortcut	ShortcutsWindow		Geselecteerde sneltoets verwijderen
 Add new shortcut	ShortcutsWindow		Nieuwe sneltoets toevoegen
 Save & apply	ShortcutsWindow		Opslaan & toepassen

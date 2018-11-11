@@ -10,11 +10,14 @@
 
 #include <AppFileInfo.h>
 #include <Application.h>
+#include <AutoDeleter.h>
 #include <Autolock.h>
 #include <File.h>
 #include <HttpHeaders.h>
 #include <HttpRequest.h>
 #include <Json.h>
+#include <JsonTextWriter.h>
+#include <JsonMessageWriter.h>
 #include <Message.h>
 #include <Roster.h>
 #include <Url.h>
@@ -23,6 +26,7 @@
 #include <UrlProtocolRoster.h>
 
 #include "AutoLocker.h"
+#include "DataIOUtils.h"
 #include "HaikuDepotConstants.h"
 #include "List.h"
 #include "Logger.h"
@@ -33,6 +37,7 @@
 
 #define BASEURL_DEFAULT "https://depot.haiku-os.org"
 #define USERAGENT_FALLBACK_VERSION "0.0.0"
+#define LOG_PAYLOAD_LIMIT 8192
 
 
 class JsonBuilder {
@@ -363,55 +368,139 @@ WebAppInterface::RetrieveUserRating(const BString& packageName,
 	const BString &repositoryCode, const BString& username,
 	BMessage& message)
 {
-	BString jsonString = JsonBuilder()
-		.AddValue("jsonrpc", "2.0")
-		.AddValue("id", ++fRequestIndex)
-		.AddValue("method", "getUserRatingByUserAndPkgVersion")
-		.AddArray("params")
-			.AddObject()
-				.AddValue("userNickname", username)
-				.AddValue("pkgName", packageName)
-				.AddValue("pkgVersionArchitectureCode", architecture)
-				.AddValue("pkgVersionMajor", version.Major(), true)
-				.AddValue("pkgVersionMinor", version.Minor(), true)
-				.AddValue("pkgVersionMicro", version.Micro(), true)
-				.AddValue("pkgVersionPreRelease", version.PreRelease(), true)
-				.AddValue("pkgVersionRevision", (int)version.Revision())
-				.AddValue("repositoryCode", repositoryCode)
-			.EndObject()
-		.EndArray()
-	.End();
+		// BHttpRequest later takes ownership of this.
+	BMallocIO* requestEnvelopeData = new BMallocIO();
+	BJsonTextWriter requestEnvelopeWriter(requestEnvelopeData);
 
-	return _SendJsonRequest("userrating", jsonString, 0, message);
+	requestEnvelopeWriter.WriteObjectStart();
+	_WriteStandardJsonRpcEnvelopeValues(requestEnvelopeWriter,
+		"getUserRatingByUserAndPkgVersion");
+	requestEnvelopeWriter.WriteObjectName("params");
+	requestEnvelopeWriter.WriteArrayStart();
+
+	requestEnvelopeWriter.WriteObjectStart();
+
+	requestEnvelopeWriter.WriteObjectName("userNickname");
+	requestEnvelopeWriter.WriteString(username.String());
+	requestEnvelopeWriter.WriteObjectName("pkgName");
+	requestEnvelopeWriter.WriteString(packageName.String());
+	requestEnvelopeWriter.WriteObjectName("pkgVersionArchitectureCode");
+	requestEnvelopeWriter.WriteString(architecture.String());
+	requestEnvelopeWriter.WriteObjectName("repositoryCode");
+	requestEnvelopeWriter.WriteString(repositoryCode.String());
+
+	if (version.Major().Length() > 0) {
+		requestEnvelopeWriter.WriteObjectName("pkgVersionMajor");
+		requestEnvelopeWriter.WriteString(version.Major().String());
+	}
+
+	if (version.Minor().Length() > 0) {
+		requestEnvelopeWriter.WriteObjectName("pkgVersionMinor");
+		requestEnvelopeWriter.WriteString(version.Minor().String());
+	}
+
+	if (version.Micro().Length() > 0) {
+		requestEnvelopeWriter.WriteObjectName("pkgVersionMicro");
+		requestEnvelopeWriter.WriteString(version.Micro().String());
+	}
+
+	if (version.PreRelease().Length() > 0) {
+		requestEnvelopeWriter.WriteObjectName("pkgVersionPreRelease");
+		requestEnvelopeWriter.WriteString(version.PreRelease().String());
+	}
+
+	if (version.Revision() != 0) {
+		requestEnvelopeWriter.WriteObjectName("pkgVersionRevision");
+		requestEnvelopeWriter.WriteInteger(version.Revision());
+	}
+
+	requestEnvelopeWriter.WriteObjectEnd();
+	requestEnvelopeWriter.WriteArrayEnd();
+	requestEnvelopeWriter.WriteObjectEnd();
+
+	return _SendJsonRequest("userrating", requestEnvelopeData,
+		_LengthAndSeekToZero(requestEnvelopeData), NEEDS_AUTHORIZATION,
+		message);
 }
 
 
 status_t
 WebAppInterface::CreateUserRating(const BString& packageName,
+	const BPackageVersion& version,
 	const BString& architecture, const BString& repositoryCode,
 	const BString& languageCode, const BString& comment,
 	const BString& stability, int rating, BMessage& message)
 {
-	BString jsonString = JsonBuilder()
-		.AddValue("jsonrpc", "2.0")
-		.AddValue("id", ++fRequestIndex)
-		.AddValue("method", "createUserRating")
-		.AddArray("params")
-			.AddObject()
-				.AddValue("pkgName", packageName)
-				.AddValue("pkgVersionArchitectureCode", architecture)
-				.AddValue("pkgVersionType", "LATEST")
-				.AddValue("userNickname", fUsername)
-				.AddValue("rating", rating)
-				.AddValue("userRatingStabilityCode", stability, true)
-				.AddValue("comment", comment)
-				.AddValue("repositoryCode", repositoryCode)
-				.AddValue("naturalLanguageCode", languageCode)
-			.EndObject()
-		.EndArray()
-	.End();
+		// BHttpRequest later takes ownership of this.
+	BMallocIO* requestEnvelopeData = new BMallocIO();
+	BJsonTextWriter requestEnvelopeWriter(requestEnvelopeData);
 
-	return _SendJsonRequest("userrating", jsonString, NEEDS_AUTHORIZATION,
+	requestEnvelopeWriter.WriteObjectStart();
+	_WriteStandardJsonRpcEnvelopeValues(requestEnvelopeWriter,
+		"createUserRating");
+	requestEnvelopeWriter.WriteObjectName("params");
+	requestEnvelopeWriter.WriteArrayStart();
+
+	requestEnvelopeWriter.WriteObjectStart();
+	requestEnvelopeWriter.WriteObjectName("pkgName");
+	requestEnvelopeWriter.WriteString(packageName.String());
+	requestEnvelopeWriter.WriteObjectName("pkgVersionArchitectureCode");
+	requestEnvelopeWriter.WriteString(architecture.String());
+	requestEnvelopeWriter.WriteObjectName("repositoryCode");
+	requestEnvelopeWriter.WriteString(repositoryCode.String());
+	requestEnvelopeWriter.WriteObjectName("naturalLanguageCode");
+	requestEnvelopeWriter.WriteString(languageCode.String());
+	requestEnvelopeWriter.WriteObjectName("pkgVersionType");
+	requestEnvelopeWriter.WriteString("SPECIFIC");
+	requestEnvelopeWriter.WriteObjectName("userNickname");
+	requestEnvelopeWriter.WriteString(fUsername.String());
+
+	if (!version.Major().IsEmpty()) {
+		requestEnvelopeWriter.WriteObjectName("pkgVersionMajor");
+		requestEnvelopeWriter.WriteString(version.Major());
+	}
+
+	if (!version.Minor().IsEmpty()) {
+		requestEnvelopeWriter.WriteObjectName("pkgVersionMinor");
+		requestEnvelopeWriter.WriteString(version.Minor());
+	}
+
+	if (!version.Micro().IsEmpty()) {
+		requestEnvelopeWriter.WriteObjectName("pkgVersionMicro");
+		requestEnvelopeWriter.WriteString(version.Micro());
+	}
+
+	if (!version.PreRelease().IsEmpty()) {
+		requestEnvelopeWriter.WriteObjectName("pkgVersionPreRelease");
+		requestEnvelopeWriter.WriteString(version.PreRelease());
+	}
+
+	if (version.Revision() != 0) {
+		requestEnvelopeWriter.WriteObjectName("pkgVersionRevision");
+		requestEnvelopeWriter.WriteInteger(version.Revision());
+	}
+
+	if (rating > 0.0f) {
+		requestEnvelopeWriter.WriteObjectName("rating");
+    	requestEnvelopeWriter.WriteInteger(rating);
+	}
+
+	if (stability.Length() > 0) {
+		requestEnvelopeWriter.WriteObjectName("userRatingStabilityCode");
+		requestEnvelopeWriter.WriteString(stability);
+	}
+
+	if (comment.Length() > 0) {
+		requestEnvelopeWriter.WriteObjectName("comment");
+		requestEnvelopeWriter.WriteString(comment.String());
+	}
+
+	requestEnvelopeWriter.WriteObjectEnd();
+	requestEnvelopeWriter.WriteArrayEnd();
+	requestEnvelopeWriter.WriteObjectEnd();
+
+	return _SendJsonRequest("userrating", requestEnvelopeData,
+		_LengthAndSeekToZero(requestEnvelopeData), NEEDS_AUTHORIZATION,
 		message);
 }
 
@@ -421,30 +510,56 @@ WebAppInterface::UpdateUserRating(const BString& ratingID,
 	const BString& languageCode, const BString& comment,
 	const BString& stability, int rating, bool active, BMessage& message)
 {
-	BString jsonString = JsonBuilder()
-		.AddValue("jsonrpc", "2.0")
-		.AddValue("id", ++fRequestIndex)
-		.AddValue("method", "updateUserRating")
-		.AddArray("params")
-			.AddObject()
-				.AddValue("code", ratingID)
-				.AddValue("rating", rating)
-				.AddValue("userRatingStabilityCode", stability, true)
-				.AddValue("comment", comment)
-				.AddValue("naturalLanguageCode", languageCode)
-				.AddValue("active", active)
-				.AddArray("filter")
-					.AddItem("ACTIVE")
-					.AddItem("NATURALLANGUAGE")
-					.AddItem("USERRATINGSTABILITY")
-					.AddItem("COMMENT")
-					.AddItem("RATING")
-				.EndArray()
-			.EndObject()
-		.EndArray()
-	.End();
+		// BHttpRequest later takes ownership of this.
+	BMallocIO* requestEnvelopeData = new BMallocIO();
+	BJsonTextWriter requestEnvelopeWriter(requestEnvelopeData);
 
-	return _SendJsonRequest("userrating", jsonString, NEEDS_AUTHORIZATION,
+	requestEnvelopeWriter.WriteObjectStart();
+	_WriteStandardJsonRpcEnvelopeValues(requestEnvelopeWriter,
+		"updateUserRating");
+
+	requestEnvelopeWriter.WriteObjectName("params");
+	requestEnvelopeWriter.WriteArrayStart();
+
+	requestEnvelopeWriter.WriteObjectStart();
+
+	requestEnvelopeWriter.WriteObjectName("code");
+	requestEnvelopeWriter.WriteString(ratingID.String());
+	requestEnvelopeWriter.WriteObjectName("naturalLanguageCode");
+	requestEnvelopeWriter.WriteString(languageCode.String());
+	requestEnvelopeWriter.WriteObjectName("active");
+	requestEnvelopeWriter.WriteBoolean(active);
+
+	requestEnvelopeWriter.WriteObjectName("filter");
+	requestEnvelopeWriter.WriteArrayStart();
+	requestEnvelopeWriter.WriteString("ACTIVE");
+	requestEnvelopeWriter.WriteString("NATURALLANGUAGE");
+	requestEnvelopeWriter.WriteString("USERRATINGSTABILITY");
+	requestEnvelopeWriter.WriteString("COMMENT");
+	requestEnvelopeWriter.WriteString("RATING");
+	requestEnvelopeWriter.WriteArrayEnd();
+
+	if (rating >= 0) {
+		requestEnvelopeWriter.WriteObjectName("rating");
+		requestEnvelopeWriter.WriteInteger(rating);
+	}
+
+	if (stability.Length() > 0) {
+		requestEnvelopeWriter.WriteObjectName("userRatingStabilityCode");
+		requestEnvelopeWriter.WriteString(stability);
+	}
+
+	if (comment.Length() > 0) {
+		requestEnvelopeWriter.WriteObjectName("comment");
+		requestEnvelopeWriter.WriteString(comment);
+	}
+
+	requestEnvelopeWriter.WriteObjectEnd();
+	requestEnvelopeWriter.WriteArrayEnd();
+	requestEnvelopeWriter.WriteObjectEnd();
+
+	return _SendJsonRequest("userrating", requestEnvelopeData,
+		_LengthAndSeekToZero(requestEnvelopeData), NEEDS_AUTHORIZATION,
 		message);
 }
 
@@ -555,26 +670,70 @@ WebAppInterface::AuthenticateUser(const BString& nickName,
 }
 
 
+/*! JSON-RPC invocations return a response.  The response may be either
+    a result or it may be an error depending on the response structure.
+    If it is an error then there may be additional detail that is the
+    error code and message.  This method will extract the error code
+    from the response.  This method will return 0 if the payload does
+    not look like an error.
+*/
+
+int32
+WebAppInterface::ErrorCodeFromResponse(BMessage& response)
+{
+	BMessage error;
+	double code;
+
+	if (response.FindMessage("error", &error) == B_OK
+		&& error.FindDouble("code", &code) == B_OK) {
+		return (int32) code;
+	}
+
+	return 0;
+}
+
+
 // #pragma mark - private
 
 
+void
+WebAppInterface::_WriteStandardJsonRpcEnvelopeValues(BJsonWriter& writer,
+	const char* methodName)
+{
+	writer.WriteObjectName("jsonrpc");
+	writer.WriteString("2.0");
+	writer.WriteObjectName("id");
+	writer.WriteInteger(++fRequestIndex);
+	writer.WriteObjectName("method");
+	writer.WriteString(methodName);
+}
+
+
 status_t
-WebAppInterface::_SendJsonRequest(const char* domain, BDataIO* requestData,
+WebAppInterface::_SendJsonRequest(const char* domain, BPositionIO* requestData,
 	size_t requestDataSize, uint32 flags, BMessage& reply) const
 {
+	if (requestDataSize == 0) {
+		if (Logger::IsInfoEnabled())
+			printf("jrpc; empty request payload\n");
+		return B_ERROR;
+	}
+
 	if (!ServerHelper::IsNetworkAvailable()) {
 		if (Logger::IsDebugEnabled()) {
-			printf("dropping json-rpc request to ...[%s] as network is not "
+			printf("jrpc; dropping request to ...[%s] as network is not "
 				"available\n", domain);
 		}
+		delete requestData;
 		return HD_NETWORK_INACCESSIBLE;
 	}
 
 	if (ServerSettings::IsClientTooOld()) {
 		if (Logger::IsDebugEnabled()) {
-			printf("dropping json-rpc request to ...[%s] as client is too "
+			printf("jrpc; dropping request to ...[%s] as client is too "
 				"old\n", domain);
 		}
+		delete requestData;
 		return HD_CLIENT_TOO_OLD;
 	}
 
@@ -582,8 +741,18 @@ WebAppInterface::_SendJsonRequest(const char* domain, BDataIO* requestData,
 	bool isSecure = url.Protocol() == "https";
 
 	if (Logger::IsDebugEnabled()) {
-		printf("will make json-rpc request to [%s]\n",
+		printf("jrpc; will make request to [%s]\n",
 			url.UrlString().String());
+	}
+
+	// If the request payload is logged then it must be copied to local memory
+	// from the stream.  This then requires that the request data is then
+	// delivered from memory.
+
+	if (Logger::IsTraceEnabled()) {
+		printf("jrpc request; ");
+		_LogPayload(requestData, requestDataSize);
+		printf("\n");
 	}
 
 	ProtocolListener listener(Logger::IsTraceEnabled());
@@ -607,6 +776,7 @@ WebAppInterface::_SendJsonRequest(const char* domain, BDataIO* requestData,
 		context.AddAuthentication(url, authentication);
 	}
 
+
 	request.AdoptInputData(requestData, requestDataSize);
 
 	BMallocIO replyData;
@@ -621,7 +791,7 @@ WebAppInterface::_SendJsonRequest(const char* domain, BDataIO* requestData,
 	int32 statusCode = result.StatusCode();
 
 	if (Logger::IsDebugEnabled()) {
-		printf("did receive json-rpc response http status [%" B_PRId32 "] "
+		printf("jrpc; did receive http-status [%" B_PRId32 "] "
 			"from [%s]\n", statusCode, url.UrlString().String());
 	}
 
@@ -634,14 +804,23 @@ WebAppInterface::_SendJsonRequest(const char* domain, BDataIO* requestData,
 			return HD_CLIENT_TOO_OLD;
 
 		default:
-			printf("json-rpc request to endpoint [.../%s] failed with http "
+			printf("jrpc request to endpoint [.../%s] failed with http "
 				"status [%" B_PRId32 "]\n", domain, statusCode);
 			return B_ERROR;
 	}
 
-	status_t status = BJson::Parse(
-		static_cast<const char *>(replyData.Buffer()), replyData.BufferLength(),
-		reply);
+	replyData.Seek(0, SEEK_SET);
+
+	if (Logger::IsTraceEnabled()) {
+		printf("jrpc response; ");
+		_LogPayload(&replyData, replyData.BufferLength());
+		printf("\n");
+	}
+
+	BJsonMessageWriter jsonMessageWriter(reply);
+	BJson::Parse(&replyData, &jsonMessageWriter);
+	status_t status = jsonMessageWriter.ErrorStatus();
+
 	if (Logger::IsTraceEnabled() && status == B_BAD_DATA) {
 		BString resultString(static_cast<const char *>(replyData.Buffer()),
 			replyData.BufferLength());
@@ -652,16 +831,57 @@ WebAppInterface::_SendJsonRequest(const char* domain, BDataIO* requestData,
 
 
 status_t
-WebAppInterface::_SendJsonRequest(const char* domain, BString jsonString,
+WebAppInterface::_SendJsonRequest(const char* domain, const BString& jsonString,
 	uint32 flags, BMessage& reply) const
 {
-	if (Logger::IsTraceEnabled())
-		printf("_SendJsonRequest(%s)\n", jsonString.String());
-
-	BMemoryIO* data = new BMemoryIO(
-		jsonString.String(), jsonString.Length() - 1);
+	// gets 'adopted' by the subsequent http request.
+	BMemoryIO* data = new BMemoryIO(jsonString.String(),
+		jsonString.Length() - 1);
 
 	return _SendJsonRequest(domain, data, jsonString.Length() - 1, flags,
 		reply);
 }
 
+
+void
+WebAppInterface::_LogPayload(BPositionIO* requestData, size_t size)
+{
+	off_t requestDataOffset = requestData->Position();
+	char buffer[LOG_PAYLOAD_LIMIT];
+
+	if (size > LOG_PAYLOAD_LIMIT)
+		size = LOG_PAYLOAD_LIMIT;
+
+	if (B_OK != requestData->ReadExactly(buffer, size)) {
+		printf("jrpc; error logging payload\n");
+	} else {
+		for (uint32 i = 0; i < size; i++) {
+    		bool esc = buffer[i] > 126 ||
+    			(buffer[i] < 0x20 && buffer[i] != 0x0a);
+
+    		if (esc)
+    			printf("\\u%02x", buffer[i]);
+    		else
+    			putchar(buffer[i]);
+    	}
+
+    	if (size == LOG_PAYLOAD_LIMIT)
+    		printf("...(continues)");
+	}
+
+	requestData->Seek(requestDataOffset, SEEK_SET);
+}
+
+
+/*! This will get the position of the data to get the length an then sets the
+    offset to zero so that it can be re-read for reading the payload in to log
+    or send.
+*/
+
+off_t
+WebAppInterface::_LengthAndSeekToZero(BPositionIO* data)
+{
+	off_t dataSize = data->Position();
+    data->Seek(0, SEEK_SET);
+    return dataSize;
+}

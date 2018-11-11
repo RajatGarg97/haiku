@@ -1,6 +1,7 @@
 /*
- * Copyright 2009, Colin Günther, coling@gmx.de.
- * All Rights Reserved. Distributed under the terms of the MIT License.
+ * Copyright 2009, Colin Günther, coling@gmx.de. All rights reserved.
+ * Copyright 2018, Haiku, Inc. All rights reserved.
+ * Distributed under the terms of the MIT license.
  */
 
 
@@ -24,8 +25,12 @@ NO_HAIKU_FBSD_MII_DRIVER();
 NO_HAIKU_REENABLE_INTERRUPTS();
 HAIKU_DRIVER_REQUIREMENTS(FBSD_TASKQUEUES | FBSD_WLAN);
 HAIKU_FIRMWARE_VERSION(44417);
-HAIKU_FIRMWARE_NAME_MAP(9) = {
+HAIKU_FIRMWARE_NAME_MAP(13) = {
+	{"iwn100fw", "iwlwifi-100-5.ucode"},
+	{"iwn105fw", "iwlwifi-105-6.ucode"},
+	{"iwn135fw", "iwlwifi-135-6.ucode"},
 	{"iwn1000fw", "iwlwifi-1000-5.ucode"},
+	{"iwn2000fw", "iwlwifi-2000-6.ucode"},
 	{"iwn2030fw", "iwlwifi-2030-6.ucode"},
 	{"iwn4965fw", "iwlwifi-4965-2.ucode"},
 	{"iwn5000fw", "iwlwifi-5000-5.ucode"},
@@ -43,25 +48,24 @@ HAIKU_CHECK_DISABLE_INTERRUPTS(device_t dev)
 	struct iwn_softc* sc = (struct iwn_softc*)device_get_softc(dev);
 	uint32 r1, r2;
 
+	/* Disable interrupts. */
+	IWN_WRITE(sc, IWN_INT_MASK, 0);
+
 	r1 = IWN_READ(sc, IWN_INT);
+	if (r1 == 0xffffffff || (r1 & 0xfffffff0) == 0xa5a5a5a0) {
+		return 0; /* Hardware gone! */
+	}
 	r2 = IWN_READ(sc, IWN_FH_INT);
 
 	if (r1 == 0 && r2 == 0) {
 		// not for us
-		IWN_WRITE(sc, IWN_INT_MASK, sc->int_mask);
-		return 0;
-	}
-
-	if (r1 == 0xffffffff) {
-		// hardware gone
+		if (sc->sc_flags & IWN_FLAG_RUNNING)
+			IWN_WRITE(sc, IWN_INT_MASK, sc->int_mask);
 		return 0;
 	}
 
 	atomic_set((int32*)&sc->sc_intr_status_1, r1);
 	atomic_set((int32*)&sc->sc_intr_status_2, r2);
-
-	IWN_WRITE(sc, IWN_INT_MASK, 0);
-		// disable interrupts
 
 	return 1;
 }

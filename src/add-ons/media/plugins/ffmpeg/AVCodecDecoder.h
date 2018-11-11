@@ -19,13 +19,13 @@
 
 extern "C" {
 	#include "avcodec.h"
-#if LIBAVCODEC_VERSION_INT >= ((57 << 16) | (0 << 8))
 	#include "avfilter.h"
 	#include "buffersink.h"
 	#include "buffersrc.h"
-#endif
+	#include "imgutils.h"
 	#include "swresample.h"
 	#include "swscale.h"
+	#include "timestamp.h"
 }
 
 
@@ -36,7 +36,7 @@ extern "C" {
 #include "gfx_util.h"
 
 
-#ifdef __x86_64
+#if 1
 #define USE_SWS_FOR_COLOR_SPACE_CONVERSION 1
 #else
 #define USE_SWS_FOR_COLOR_SPACE_CONVERSION 0
@@ -100,14 +100,12 @@ private:
 			void		_UpdateMediaHeaderForVideoFrame();
 			status_t	_DeinterlaceAndColorConvertVideoFrame();
 
-#if LIBAVCODEC_VERSION_INT >= ((57 << 16) | (0 << 8))
 			// video deinterlace filter graph
 			status_t	_InitFilterGraph(enum AVPixelFormat pixfmt,
 							int32 width, int32 height);
-			status_t	_ProcessFilterGraph(AVPicture *dst,
-							const AVPicture *src, enum AVPixelFormat pixfmt,
+			status_t	_ProcessFilterGraph(AVFrame *dst,
+							const AVFrame *src, enum AVPixelFormat pixfmt,
 							int32 width, int32 height);
-#endif
 
 			media_header		fHeader;
 									// Contains the properties of the current
@@ -120,7 +118,7 @@ private:
 
 			// FFmpeg related members
 			AVCodec*			fCodec;
-			AVCodecContext*		fContext;
+			AVCodecContext*		fCodecContext;
 			SwrContext*			fResampleContext;
 			uint8_t*			fDecodedData;
 			size_t				fDecodedDataSizeInBytes;
@@ -158,7 +156,6 @@ private:
 
 			AVPacket			fTempPacket;
 
-#if LIBAVCODEC_VERSION_INT >= ((57 << 16) | (0 << 8))
 			// video deinterlace feature
 			AVFilterContext*	fBufferSinkContext;
 			AVFilterContext*	fBufferSourceContext;
@@ -167,7 +164,6 @@ private:
 			int32				fLastWidth;
 			int32				fLastHeight;
 			enum AVPixelFormat	fLastPixfmt;
-#endif
 };
 
 #endif // AVCODEC_DECODER_H

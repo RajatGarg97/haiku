@@ -16,7 +16,6 @@
 
 #include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
 
 #include <zlib.h>
 
@@ -86,9 +85,26 @@ video_display_splash(addr_t frameBuffer)
 	if (!gKernelArgs.frame_buffer.enabled)
 		return B_NO_INIT;
 
-	// clear the video memory
-	memset((void*)frameBuffer, 0,
+	addr_t pos = 0;
+	// Limit area to clear to estimated screen area
+	// UEFI can happily report a >256M framebuffer
+	addr_t size = min_c(gKernelArgs.frame_buffer.width
+			* gKernelArgs.frame_buffer.height * 4u,
 		gKernelArgs.frame_buffer.physical_buffer.size);
+
+	if (size >= 64) {
+		// Align writes
+		for (addr_t align = (8 - (frameBuffer & 7)) & 7; pos < align; pos++)
+			*(char*)(frameBuffer + pos) = 0;
+		// Write eight bytes, many many times, but not too many
+		for (addr_t alignSize = size - 8; pos < alignSize; pos +=8) {
+			*(uint32*)(frameBuffer + pos) = 0;
+			*(uint32*)(frameBuffer + pos + 4) = 0;
+		}
+	}
+	// Write a few bytes more
+	for (; pos < size; pos++)
+		*(char*)(frameBuffer + pos) = 0;
 
 	uint8* uncompressedLogo = NULL;
 	unsigned int uncompressedSize = kSplashLogoWidth * kSplashLogoHeight;

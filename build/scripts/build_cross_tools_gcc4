@@ -9,6 +9,8 @@ if [ $# -lt 4 ]; then
 	exit 1
 fi
 
+set -e
+
 haikuMachine=$1
 haikuSourceDir=$2
 buildToolsDir=$3
@@ -139,6 +141,16 @@ fi
 # to the VCS).
 find "$binutilsSourceDir" "$gccSourceDir" -name \*.info -print0 | xargs -0 touch
 
+# touch all configure files in order to avoid them being auto-rebuilt,
+# as this often fails because the host system does not have the exact
+# version of autofools that GCC wants
+find "$binutilsSourceDir" "$gccSourceDir" \( -name configure -o -name \*.in \) -print0 | xargs -0 touch
+
+# export some variables to stop the subsequent configure/make from invoking
+# tools which we don't require the user to have installed (or do not require
+# a specific version of, which autofools does.)
+export ACLOCAL=:
+
 # create the object and installation directories for the cross compilation tools
 objDir="${installDir}-build"
 binutilsObjDir="$objDir/binutils"
@@ -200,6 +212,7 @@ CFLAGS="$ccFlags" CXXFLAGS="$cxxFlags" "$binutilsSourceDir/configure" \
 	--enable-targets=$binutilsTargets \
 	--disable-nls --disable-shared --disable-werror \
 	--with-sysroot="$sysrootDir" --disable-initfini-array \
+	--disable-maintainer-mode \
 	$binutilsConfigureArgs \
 	|| exit 1
 $MAKE $additionalMakeArgs || exit 1
@@ -263,6 +276,7 @@ CFLAGS="$ccFlags" CXXFLAGS="$cxxFlags" "$gccSourceDir/configure" \
 	--enable-__cxa-atexit --enable-threads=posix \
 	--with-default-libstdcxx-abi=gcc4-compatible \
 	--with-sysroot="$sysrootDir" \
+	--disable-maintainer-mode \
 	$gccConfigureArgs \
 	|| exit 1
 

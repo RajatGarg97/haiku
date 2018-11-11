@@ -598,6 +598,10 @@ getaddrinfo(const char *hostname, const char *servname,
 		error = explore_fqdn(pai, hostname, servname, &cur->ai_next,
 		    &svd);
 
+#ifndef __HAIKU__
+		while (cur && cur->ai_next)
+			cur = cur->ai_next;
+#else
 		while (cur && cur->ai_next) {
 			if ((((uint64_t)1 << cur->ai_next->ai_family) & mask) == 0) {
 				/* entry does not match addrconfig mask, remove from list */
@@ -611,6 +615,7 @@ getaddrinfo(const char *hostname, const char *servname,
 			}
 		}
 	}
+#endif
 
 	/* XXX */
 	if (sentinel.ai_next)
@@ -802,7 +807,22 @@ explore_numeric(const struct addrinfo *pai, const char *hostname,
 
 	switch (afd->a_af) {
 	case AF_INET:
-		if (inet_aton(hostname, (struct in_addr *)pton) == 1) {
+		/*
+		* RFC3493 section 6.1, requires getaddrinfo() to accept
+		* AF_INET formats that are accepted by inet_addr(); here
+		* we use the equivalent inet_aton() function so we can
+		* check for errors. inet_pton() only accepts addresses
+		* in the dotted quad format and only in base 10, so we
+		* need to treat AF_INET specially.
+		*
+		* We also check for trailing characters and fail if there
+		* are any. This matches the inet_pton6(), but not the
+		* inet_pton4() behavior. We choose to make the protocol
+		* behavior consistent.
+		*/
+		if (inet_aton(hostname, (void *)pton) == 1 &&
+		    hostname[strspn(hostname, "0123456789.xabcdefXABCDEF")]
+		    == '\0') {
 			if (pai->ai_family == afd->a_af ||
 			    pai->ai_family == PF_UNSPEC /*?*/) {
 				GET_AI(cur->ai_next, afd, pton);
@@ -1103,9 +1123,13 @@ addrconfig(uint64_t *mask)
 
 	*mask = 0;
 	for (ifa = ifaddrs; ifa != NULL; ifa = ifa->ifa_next)
-		if (ifa->ifa_addr && (ifa->ifa_flags & IFF_UP)
-				&& !(ifa->ifa_flags & IFF_LOOPBACK)) {
+#ifndef __HAIKU__
+		if (ifa->ifa_addr && (ifa->ifa_flags & IFF_UP)) {
+#else
+ 		if (ifa->ifa_addr && (ifa->ifa_flags & IFF_UP)
+ 				&& !(ifa->ifa_flags & IFF_LOOPBACK)) {
 			assert(ifa->ifa_addr->sa_family < 64);
+#endif
 			*mask |= (uint64_t)1 << ifa->ifa_addr->sa_family;
 		}
 

@@ -1,15 +1,15 @@
 /*
  * Copyright 2010, Axel Dörfler, axeld@pinc-software.de.
- * Distributed under the terms of the MIT License.
+ * Copyright 2018, Haiku, Inc. All rights reserved.
+ * Distributed under the terms of the MIT license.
  */
 
-
-#include "device.h"
 
 #include <lock.h>
 #include <thread.h>
 
 extern "C" {
+#	include "device.h"
 #	include <sys/callout.h>
 #	include <sys/mutex.h>
 }
@@ -36,14 +36,15 @@ static bigtime_t sTimeout;
 static status_t
 callout_thread(void* /*data*/)
 {
-	status_t status = B_OK;
+	status_t status = B_NO_INIT;
 
 	do {
 		bigtime_t timeout = B_INFINITE_TIMEOUT;
 
 		if (status == B_TIMED_OUT || status == B_OK) {
 			// scan timers for new timeout and/or execute a timer
-			mutex_lock(&sLock);
+			if ((status = mutex_lock(&sLock)) != B_OK)
+				continue;
 
 			struct callout* c = NULL;
 			while (true) {
@@ -66,10 +67,12 @@ callout_thread(void* /*data*/)
 
 					c->c_func(c->c_arg);
 
-					if (mutex != NULL)
+					if (mutex != NULL
+							&& (c->c_flags & CALLOUT_RETURNUNLOCKED) == 0)
 						mtx_unlock(mutex);
 
-					mutex_lock(&sLock);
+					if ((status = mutex_lock(&sLock)) != B_OK)
+						continue;
 
 					sCurrentCallout = NULL;
 					c = NULL;
@@ -125,10 +128,10 @@ init_callout(void)
 
 	return resume_thread(sThread);
 
-err1:
-	mutex_destroy(&sLock);
 err2:
 	delete_sem(sWaitSem);
+err1:
+	mutex_destroy(&sLock);
 	return status;
 }
 
@@ -137,12 +140,11 @@ void
 uninit_callout(void)
 {
 	delete_sem(sWaitSem);
+
+	wait_for_thread(sThread, NULL);
+
 	mutex_lock(&sLock);
-
 	mutex_destroy(&sLock);
-
-	status_t status;
-	wait_for_thread(sThread, &status);
 }
 
 
@@ -173,7 +175,7 @@ callout_init_mtx(struct callout *c, struct mtx *mtx, int flags)
 
 
 int
-callout_reset(struct callout *c, int ticks, void (*func)(void *), void *arg)
+callout_reset(struct callout *c, int _ticks, void (*func)(void *), void *arg)
 {
 	int canceled = callout_stop(c);
 
@@ -189,7 +191,7 @@ callout_reset(struct callout *c, int ticks, void (*func)(void *), void *arg)
 		if (c->due <= 0)
 			list_add_item(&sTimers, c);
 
-		c->due = system_time() + ticks_to_usecs(ticks);
+		c->due = system_time() + ticks_to_usecs(_ticks);
 
 		// notify timer about the change if necessary
 		if (sTimeout > c->due)
@@ -201,9 +203,9 @@ callout_reset(struct callout *c, int ticks, void (*func)(void *), void *arg)
 
 
 int
-callout_schedule(struct callout *callout, int ticks)
+callout_schedule(struct callout *callout, int _ticks)
 {
-	return callout_reset(callout, ticks, callout->c_func, callout->c_arg);
+	return callout_reset(callout, _ticks, callout->c_func, callout->c_arg);
 }
 
 
@@ -211,6 +213,11 @@ int
 _callout_stop_safe(struct callout *c, int safe)
 {
 	MutexLocker locker(sLock);
+
+	if (c == NULL) {
+		printf("_callout_stop_safe called with NULL callout\n");
+		return 0;
+	}
 
 	TRACE("_callout_stop_safe %p, func %p, arg %p\n", c, c->c_func, c->c_arg);
 

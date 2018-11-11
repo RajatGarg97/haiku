@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2016 Haiku Inc. All rights reserved.
+ * Copyright 2010-2018 Haiku Inc. All rights reserved.
  * Distributed under the terms of the MIT License.
  */
 #ifndef _B_URL_H_
@@ -64,10 +64,8 @@ public:
 			void				UrlEncode(bool strict = false);
 			void				UrlDecode(bool strict = false);
 
-#ifdef HAIKU_TARGET_PLATFORM_HAIKU
 			status_t			IDNAToAscii();
 			status_t			IDNAToUnicode();
-#endif
 
 	// Url encoding/decoding of strings
 	static	BString				UrlEncode(const BString& url,
@@ -76,13 +74,11 @@ public:
 	static	BString				UrlDecode(const BString& url,
 									bool strict = false);
 
-#ifdef HAIKU_TARGET_PLATFORM_HAIKU
 	// utility functionality
 			bool				HasPreferredApplication() const;
 			BString				PreferredApplication() const;
 			status_t			OpenWithPreferredApplication(
 									bool onProblemAskUser = true) const;
-#endif
 
 	// BArchivable members
 	virtual	status_t			Archive(BMessage* into,
@@ -104,7 +100,8 @@ public:
 private:
 			void				_ResetFields();
 			bool				_ContainsDelimiter(const BString& url);
-			status_t			_ExplodeUrlString(const BString& urlString);
+			status_t			_ExplodeUrlString(const BString& urlString,
+									uint32 flags);
 			BString				_MergePath(const BString& relative) const;
 			void				_SetPathUnsafe(const BString& path);
 
@@ -113,10 +110,20 @@ private:
 	static 	BString				_DoUrlDecodeChunk(const BString& chunk,
 									bool strict);
 
-			bool				_IsProtocolValid();
+			bool				_IsHostValid() const;
+			bool				_IsHostIPV6Valid(size_t offset,
+									int32 length) const;
+			bool				_IsProtocolValid() const;
 	static	bool				_IsUnreserved(char c);
 	static	bool				_IsGenDelim(char c);
 	static	bool				_IsSubDelim(char c);
+	static	bool				_IsIPV6Char(char c);
+	static	bool				_IsUsernameChar(char c);
+	static	bool				_IsPasswordChar(char c);
+	static	bool				_IsHostChar(char c);
+	static	bool				_IsPortChar(char c);
+
+	static	void				_RemoveLastPathComponent(BString& path);
 
 			BString				_UrlMimeType() const;
 

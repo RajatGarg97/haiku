@@ -2,6 +2,7 @@ SubDir HAIKU_TOP src system kernel arch ppc ;
 
 SubDirHdrs $(SUBDIR) $(DOTDOT) generic ;
 UsePrivateKernelHeaders ;
+SubDirSysHdrs $(HAIKU_TOP) src add-ons kernel bus_managers fdt ;
 
 SEARCH_SOURCE += [ FDirName $(SUBDIR) $(DOTDOT) generic ] ;
 SEARCH_SOURCE += [ FDirName $(SUBDIR) paging ] ;
@@ -53,6 +54,8 @@ KernelMergeObject kernel_arch_ppc.o :
 	arch_vm.cpp
 	arch_vm_translation_map.cpp
 	arch_asm.S
+
+	# serial uart
 	debug_uart_8250.cpp
 	arch_uart_8250.cpp
 
@@ -70,6 +73,7 @@ KernelMergeObject kernel_arch_ppc.o :
 	:
 	arch_ppc_classic.o
 	arch_ppc_460.o
+	kernel_fdt.a
 ;
 
 CreateAsmStructOffsetsHeader asm_offsets.h : asm_offsets.cpp ;

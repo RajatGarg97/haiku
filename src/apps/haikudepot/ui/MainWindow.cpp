@@ -12,9 +12,9 @@
 #include "MainWindow.h"
 
 #include <map>
+#include <vector>
 
 #include <stdio.h>
-
 #include <Alert.h>
 #include <Autolock.h>
 #include <Application.h>
@@ -55,6 +55,7 @@
 #include "PackageListView.h"
 #include "PackageManager.h"
 #include "RatePackageWindow.h"
+#include "RepositoryUrlUtils.h"
 #include "support.h"
 #include "ScreenshotWindow.h"
 #include "UserLoginWindow.h"
@@ -75,6 +76,7 @@ enum {
 	MSG_AUTHORIZATION_CHANGED	= 'athc',
 	MSG_PACKAGE_CHANGED			= 'pchd',
 
+	MSG_SHOW_FEATURED_PACKAGES	= 'sofp',
 	MSG_SHOW_AVAILABLE_PACKAGES	= 'savl',
 	MSG_SHOW_INSTALLED_PACKAGES	= 'sins',
 	MSG_SHOW_SOURCE_PACKAGES	= 'ssrc',
@@ -87,7 +89,6 @@ using namespace BPackageKit::BManager::BPrivate;
 
 
 typedef std::map<BString, PackageInfoRef> PackageInfoMap;
-typedef std::map<BString, DepotInfo> DepotInfoMap;
 
 
 struct RefreshWorkerParameters {
@@ -137,10 +138,10 @@ MainWindow::MainWindow(const BMessage& settings)
 	fSinglePackageMode(false),
 	fModelWorker(B_BAD_THREAD_ID)
 {
-	BMenuBar* menuBar = new BMenuBar(B_TRANSLATE("Main Menu"));
+	BMenuBar* menuBar = new BMenuBar("Main Menu");
 	_BuildMenu(menuBar);
 
-	BMenuBar* userMenuBar = new BMenuBar(B_TRANSLATE("User Menu"));
+	BMenuBar* userMenuBar = new BMenuBar("User Menu");
 	_BuildUserMenu(userMenuBar);
 	set_small_font(userMenuBar);
 	userMenuBar->SetExplicitMaxSize(BSize(B_SIZE_UNSET,
@@ -156,11 +157,10 @@ MainWindow::MainWindow(const BMessage& settings)
 	fWorkStatusView = new WorkStatusView("work status");
 	fPackageListView->AttachWorkStatusView(fWorkStatusView);
 
-	BView* listArea = new BView("list area", 0);
-	fListLayout = new BCardLayout();
-	listArea->SetLayout(fListLayout);
-	listArea->AddChild(fFeaturedPackagesView);
-	listArea->AddChild(fPackageListView);
+	fListTabs = new TabView(BMessenger(this),
+		BMessage(MSG_SHOW_FEATURED_PACKAGES), "list tabs");
+	fListTabs->AddTab(fFeaturedPackagesView);
+	fListTabs->AddTab(fPackageListView);
 
 	BLayoutBuilder::Group<>(this, B_VERTICAL, 0.0f)
 		.AddGroup(B_HORIZONTAL, 0.0f)
@@ -170,7 +170,7 @@ MainWindow::MainWindow(const BMessage& settings)
 		.Add(fFilterView)
 		.AddSplit(fSplitView)
 			.AddGroup(B_VERTICAL)
-				.Add(listArea)
+				.Add(fListTabs)
 				.SetInsets(
 					B_USE_DEFAULT_SPACING, 0.0f,
 					B_USE_DEFAULT_SPACING, 0.0f)
@@ -203,9 +203,9 @@ MainWindow::MainWindow(const BMessage& settings)
 		fModel.SetShowSourcePackages(showOption);
 
 	if (fModel.ShowFeaturedPackages())
-		fListLayout->SetVisibleItem((int32)0);
+		fListTabs->Select(0);
 	else
-		fListLayout->SetVisibleItem(1);
+		fListTabs->Select(1);
 
 	_RestoreUserName(settings);
 	_RestoreWindowFrame(settings);
@@ -348,10 +348,14 @@ MainWindow::MessageReceived(BMessage* message)
 			break;
 
 		case MSG_SHOW_FEATURED_PACKAGES:
+			// check to see if we aren't already on the current tab
+			if (fListTabs->Selection() ==
+					(fModel.ShowFeaturedPackages() ? 0 : 1))
+				break;
 			{
 				BAutolock locker(fModel.Lock());
 				fModel.SetShowFeaturedPackages(
-					!fModel.ShowFeaturedPackages());
+					fListTabs->Selection() == 0);
 			}
 			_AdoptModel();
 			break;
@@ -389,6 +393,26 @@ MainWindow::MessageReceived(BMessage* message)
 			}
 			_AdoptModel();
 			break;
+
+			// this may be triggered by, for example, a user rating being added
+			// or having been altered.
+		case MSG_SERVER_DATA_CHANGED:
+		{
+			BString name;
+			if (message->FindString("name", &name) == B_OK) {
+				BAutolock locker(fModel.Lock());
+				if (fPackageInfoView->Package()->Name() == name) {
+					_PopulatePackageAsync(true);
+				} else {
+					if (Logger::IsDebugEnabled()) {
+						printf("pkg [%s] is updated on the server, but is "
+							"not selected so will not be updated.\n",
+							name.String());
+					}
+				}
+			}
+        	break;
+        }
 
 		case MSG_PACKAGE_SELECTED:
 		{
@@ -624,8 +648,8 @@ MainWindow::StoreSettings(BMessage& settings) const
 void
 MainWindow::PackageChanged(const PackageInfoEvent& event)
 {
-	uint32 whatchedChanges = PKG_CHANGED_STATE | PKG_CHANGED_PROMINENCE;
-	if ((event.Changes() & whatchedChanges) != 0) {
+	uint32 watchedChanges = PKG_CHANGED_STATE | PKG_CHANGED_PROMINENCE;
+	if ((event.Changes() & watchedChanges) != 0) {
 		PackageInfoRef ref(event.Package());
 		BMessage message(MSG_PACKAGE_CHANGED);
 		message.AddPointer("package", ref.Get());
@@ -829,9 +853,9 @@ MainWindow::_AdoptModel()
 	fShowDevelopPackagesItem->SetMarked(fModel.ShowDevelopPackages());
 
 	if (fModel.ShowFeaturedPackages())
-		fListLayout->SetVisibleItem((int32)0);
+		fListTabs->Select(0);
 	else
-		fListLayout->SetVisibleItem((int32)1);
+		fListTabs->Select(1);
 
 	fFilterView->AdoptModel(fModel);
 }
@@ -850,12 +874,7 @@ MainWindow::_AdoptPackage(const PackageInfoRef& package)
 			fPackageListView->SelectPackage(package);
 	}
 
-	// Trigger asynchronous package population from the web-app
-	{
-		AutoLocker<BLocker> lock(&fPackageToPopulateLock);
-		fPackageToPopulate = package;
-	}
-	release_sem_etc(fPackageToPopulateSem, 1, 0);
+	_PopulatePackageAsync(false);
 }
 
 
@@ -921,6 +940,9 @@ MainWindow::_RefreshPackageList(bool force)
 	if (fSinglePackageMode)
 		return;
 
+	if (Logger::IsDebugEnabled())
+		printf("will refresh the package list\n");
+
 	BPackageRoster roster;
 	BStringList repositoryNames;
 
@@ -928,7 +950,7 @@ MainWindow::_RefreshPackageList(bool force)
 	if (result != B_OK)
 		return;
 
-	DepotInfoMap depots;
+	std::vector<DepotInfo> depots(repositoryNames.CountStrings());
 	for (int32 i = 0; i < repositoryNames.CountStrings(); i++) {
 		const BString& repoName = repositoryNames.StringAt(i);
 		DepotInfo depotInfo = DepotInfo(repoName);
@@ -939,13 +961,22 @@ MainWindow::_RefreshPackageList(bool force)
 
 		if (getRepositoryConfigStatus == B_OK) {
 			depotInfo.SetBaseURL(repoConfig.BaseURL());
+			depotInfo.SetURL(repoConfig.URL());
+
+			if (Logger::IsDebugEnabled()) {
+				printf("local repository [%s] info;\n"
+					" * base url [%s]\n"
+					" * url [%s]\n",
+					repoName.String(), repoConfig.BaseURL().String(),
+					repoConfig.URL().String());
+			}
 		} else {
 			printf("unable to obtain the repository config for local "
 				"repository '%s'; %s\n",
 				repoName.String(), strerror(getRepositoryConfigStatus));
 		}
 
-		depots[repoName] = depotInfo;
+		depots[i] = depotInfo;
 	}
 
 	PackageManager manager(B_PACKAGE_INSTALLATION_LOCATION_HOME);
@@ -1016,24 +1047,51 @@ MainWindow::_RefreshPackageList(bool force)
 			if (modelInfo.Get() == NULL)
 				return;
 
-			modelInfo->SetDepotName(repositoryName);
-
 			foundPackages[repoPackageInfo.Name()] = modelInfo;
+		}
+
+		// The package list here considers those packages that are installed
+		// in the system as well as those that exist in remote repositories.
+		// It is better if the 'depot name' is from the remote repository
+		// because then it will be possible to perform a rating on it later.
+
+		if (modelInfo->DepotName().IsEmpty()
+			|| modelInfo->DepotName() == REPOSITORY_NAME_SYSTEM
+			|| modelInfo->DepotName() == REPOSITORY_NAME_INSTALLED) {
+			modelInfo->SetDepotName(repositoryName);
 		}
 
 		modelInfo->AddListener(this);
 
 		BSolverRepository* repository = package->Repository();
-		if (dynamic_cast<BPackageManager::RemoteRepository*>(repository)
-				!= NULL) {
-			if (depots.count(repositoryName) == 0) {
+		BPackageManager::RemoteRepository* remoteRepository =
+			dynamic_cast<BPackageManager::RemoteRepository*>(repository);
+
+		if (remoteRepository != NULL) {
+
+			std::vector<DepotInfo>::iterator it;
+
+			for (it = depots.begin(); it != depots.end(); it++) {
+				if (RepositoryUrlUtils::EqualsOnUrlOrBaseUrl(
+					it->URL(), remoteRepository->Config().URL(),
+					it->BaseURL(), remoteRepository->Config().BaseURL())) {
+					break;
+				}
+			}
+
+			if (it == depots.end()) {
 				if (Logger::IsDebugEnabled()) {
-					printf("pkg [%s] is in an unknown repository [%s] so will "
-						"be excluded from the list of managed packages\n",
+					printf("pkg [%s] repository [%s] not recognized"
+						" --> ignored\n",
 						modelInfo->Name().String(), repositoryName.String());
 				}
 			} else {
-				depots[repositoryName].AddPackage(modelInfo);
+				it->AddPackage(modelInfo);
+
+				if (Logger::IsTraceEnabled()) {
+					printf("pkg [%s] assigned to [%s]\n",
+						modelInfo->Name().String(), repositoryName.String());
+				}
 			}
 
 			remotePackages[modelInfo->Name()] = modelInfo;
@@ -1076,19 +1134,23 @@ MainWindow::_RefreshPackageList(bool force)
 
 	if (!foundPackages.empty()) {
 		BString repoName = B_TRANSLATE("Local");
-		depots[repoName] = DepotInfo(repoName);
-		DepotInfoMap::iterator depot = depots.find(repoName);
+		depots.push_back(DepotInfo(repoName));
+
 		for (PackageInfoMap::iterator it = foundPackages.begin();
 				it != foundPackages.end(); ++it) {
-			depot->second.AddPackage(it->second);
+			depots.back().AddPackage(it->second);
 		}
 	}
 
-	for (DepotInfoMap::iterator it = depots.begin(); it != depots.end(); it++) {
-		if (fModel.HasDepot(it->second.Name()))
-			fModel.SyncDepot(it->second);
-		else
-			fModel.AddDepot(it->second);
+	{
+		std::vector<DepotInfo>::iterator it;
+
+		for (it = depots.begin(); it != depots.end(); it++) {
+			if (fModel.HasDepot(it->Name()))
+				fModel.SyncDepot(*it);
+			else
+				fModel.AddDepot(*it);
+		}
 	}
 
 	// start retrieving package icons and average ratings
@@ -1116,7 +1178,7 @@ MainWindow::_RefreshPackageList(bool force)
 		BSolverRepository installedRepository;
 		{
 			BRepositoryBuilder installedRepositoryBuilder(installedRepository,
-				"installed");
+				REPOSITORY_NAME_INSTALLED);
 			for (int32 i = 0; i < systemFlaggedPackages.CountStrings(); i++) {
 				BPath packagePath(systemPath);
 				packagePath.Append(systemFlaggedPackages.StringAt(i));
@@ -1129,7 +1191,7 @@ MainWindow::_RefreshPackageList(bool force)
 		BSolverRepository systemRepository;
 		{
 			BRepositoryBuilder systemRepositoryBuilder(systemRepository,
-				"system");
+				REPOSITORY_NAME_SYSTEM);
 			for (PackageInfoMap::iterator it = systemInstalledPackages.begin();
 					it != systemInstalledPackages.end(); it++) {
 				BPath packagePath(systemPath);
@@ -1175,6 +1237,9 @@ MainWindow::_RefreshPackageList(bool force)
 		printf("Unknown exception occurred while resolving system "
 			"dependencies.\n");
 	}
+
+	if (Logger::IsDebugEnabled())
+		printf("did refresh the package list\n");
 }
 
 
@@ -1189,7 +1254,7 @@ MainWindow::_StartRefreshWorker(bool force)
 	if (parameters == NULL)
 		return;
 
-	fWorkStatusView->SetBusy(B_TRANSLATE("Refreshing..."));
+	fWorkStatusView->SetBusy(B_TRANSLATE("Refreshing" B_UTF8_ELLIPSIS));
 
 	ObjectDeleter<RefreshWorkerParameters> deleter(parameters);
 	fModelWorker = spawn_thread(&_RefreshModelThreadWorker, "model loader",
@@ -1243,7 +1308,7 @@ MainWindow::_PackageActionWorker(void* arg)
 		BMessenger messenger(window);
 		BMessage busyMessage(MSG_PACKAGE_WORKER_BUSY);
 		BString text(ref->Label());
-		text << "...";
+		text << B_UTF8_ELLIPSIS;
 		busyMessage.AddString("reason", text);
 
 		messenger.SendMessage(&busyMessage);
@@ -1255,6 +1320,34 @@ MainWindow::_PackageActionWorker(void* arg)
 }
 
 
+/*! This method will cause the package to have its data refreshed from
+    the server application.  The refresh happens in the background; this method
+    is asynchronous.
+*/
+
+void
+MainWindow::_PopulatePackageAsync(bool forcePopulate)
+{
+		// Trigger asynchronous package population from the web-app
+	{
+		AutoLocker<BLocker> lock(&fPackageToPopulateLock);
+		fPackageToPopulate = fPackageInfoView->Package();
+		fForcePopulatePackage = forcePopulate;
+	}
+	release_sem_etc(fPackageToPopulateSem, 1, 0);
+
+	if (Logger::IsDebugEnabled()) {
+		printf("pkg [%s] will be updated from the server.\n",
+			fPackageToPopulate->Name().String());
+	}
+}
+
+
+/*! This method will run in the background.  The thread will block until there
+    is a package to be updated.  When the thread unblocks, it will update the
+    package with information from the server.
+*/
+
 status_t
 MainWindow::_PopulatePackageWorker(void* arg)
 {
@@ -1262,15 +1355,27 @@ MainWindow::_PopulatePackageWorker(void* arg)
 
 	while (acquire_sem(window->fPackageToPopulateSem) == B_OK) {
 		PackageInfoRef package;
+		bool force;
 		{
 			AutoLocker<BLocker> lock(&window->fPackageToPopulateLock);
 			package = window->fPackageToPopulate;
+			force = window->fForcePopulatePackage;
 		}
 
 		if (package.Get() != NULL) {
-			window->fModel.PopulatePackage(package,
-				Model::POPULATE_USER_RATINGS | Model::POPULATE_SCREEN_SHOTS
-					| Model::POPULATE_CHANGELOG);
+			uint32 populateFlags = Model::POPULATE_USER_RATINGS
+				| Model::POPULATE_SCREEN_SHOTS
+				| Model::POPULATE_CHANGELOG;
+
+			if (force)
+				populateFlags |= Model::POPULATE_FORCE;
+
+			window->fModel.PopulatePackage(package, populateFlags);
+
+			if (Logger::IsDebugEnabled()) {
+				printf("populating package [%s]\n",
+					package->Name().String());
+			}
 		}
 	}
 
@@ -1435,9 +1540,53 @@ MainWindow::_UpdateAvailableRepositories()
 }
 
 
+bool
+MainWindow::_SelectedPackageHasWebAppRepositoryCode()
+{
+	const PackageInfoRef& package = fPackageInfoView->Package();
+	const BString depotName = package->DepotName();
+
+	if (depotName.IsEmpty()) {
+		if (Logger::IsDebugEnabled()) {
+			printf("the package [%s] has no depot name\n",
+				package->Name().String());
+		}
+	} else {
+		const DepotInfo* depot = fModel.DepotForName(depotName);
+
+		if (depot == NULL) {
+			printf("the depot [%s] was not able to be found\n",
+				depotName.String());
+		} else {
+			BString repositoryCode = depot->WebAppRepositoryCode();
+
+			if (repositoryCode.IsEmpty()) {
+				printf("the depot [%s] has no web app repository code\n",
+					depotName.String());
+			} else {
+				return true;
+			}
+		}
+	}
+
+	return false;
+}
+
+
 void
 MainWindow::_RatePackage()
 {
+	if (!_SelectedPackageHasWebAppRepositoryCode()) {
+		BAlert* alert = new(std::nothrow) BAlert(
+			B_TRANSLATE("Rating not possible"),
+			B_TRANSLATE("This package doesn't seem to be on the HaikuDepot "
+				"Server, so it's not possible to create a new rating "
+				"or edit an existing rating."),
+			B_TRANSLATE("OK"));
+		alert->Go();
+    	return;
+	}
+
 	if (fModel.Username().IsEmpty()) {
 		BAlert* alert = new(std::nothrow) BAlert(
 			B_TRANSLATE("Not logged in"),

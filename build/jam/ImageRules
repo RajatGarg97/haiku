@@ -424,7 +424,7 @@ rule AddWifiFirmwareToContainer container : driver : package : archive : extract
 		ExtractArchiveToContainer $(container) : $(dirTokens)
 			: $(firmwareArchive) : : $(package) ;
 	} else {
-		AddFilesToContainer $(container) : $(dirTokens) : $(firmwareArchive)  ;
+		AddFilesToContainer $(container) : $(dirTokens) : $(firmwareArchive) ;
 	}
 }
 
@@ -886,7 +886,7 @@ rule AddPackagesAndRepositoryVariablesToContainerScript script : container
 	AddVariableToScript $(script) : updateAllPackages
 		: $(HAIKU_UPDATE_ALL_PACKAGES) ;
 
-	# Add variable "systemPackages"  with the packages copied/updated.
+	# Add variable "systemPackages" with the packages copied/updated.
 	local allPackages = [ on $(container) return $(HAIKU_PACKAGES_IN_IMAGE) ] ;
 	if $(updateOnly) && ! [ IncludeAllTargetsInContainer $(container) ] {
 		allPackages = [ FilterContainerUpdateTargets $(allPackages)
@@ -1129,6 +1129,15 @@ rule AddHaikuImagePackages packages
 	}
 }
 
+rule AddHaikuImageSourcePackages packages
+{
+	# AddHaikuImageSourcePackages <packages> ;
+	# Adds the given source packages for <packages> to the image.
+
+	if $(HAIKU_INCLUDE_SOURCES) = 1 {
+		AddHaikuImagePackages $(packages)_source ;
+	}
+}
 
 rule IsHaikuImagePackageAdded package
 {
@@ -1167,53 +1176,6 @@ actions BuildHaikuImagePackageList
 	echo $(HAIKU_IMAGE_PACKAGES) | xargs -n 1 echo | LC_ALL=C sort -u > $(1)
 }
 
-
-rule InstallSourceArchive file : url
-{
-	if $(HAIKU_INCLUDE_SOURCES) = 1 {
-		# download archive file
-		local archiveFile = [ DownloadFile $(file) : $(url) ] ;
-
-		# copy directly into image
-		AddFilesToHaikuImage _sources_ : $(archiveFile) ;
-	}
-}
-
-rule InstallOptionalHaikuImagePackage url : dirTokens : flags
-{
-	# TODO: Remove the non-hpkg cases!
-	# Currently the semantics differs depending on whether the  cdPackage flag
-	# has been specified and the type of the package file:
-	# * For a hpkg <dirTokens> is ignored. The package will be copied into the
-	#   system/packages directory.
-	# * For a regular archive and cdPackage, <dirTokens> is ignored and
-	#   the package will be copied to the _package_ directory of the CD image.
-	# * For a regular archive and without cdPackage, <dirTokens> specifies the
-	#   directory relative to the image's root directory where the content of
-	#   the archive will be extracted to.
-	#
-	# Supported flags: cdPackage
-
-	local package = $(url:BS) ;
-
-	# download archive file
-	local archiveFile = [ DownloadFile $(package) : $(url) ] ;
-
-	if $(package:S) = .hpkg {
-		if $(HAIKU_UPDATE_ALL_PACKAGES) {
-			HAIKU_INCLUDE_IN_IMAGE on $(archiveFile) = 1 ;
-		}
-		AddPackageFilesToHaikuImage system : $(archiveFile) ;
-	} else if cdPackage in $(flags) && $(HAIKU_CD_NAME) {
-		# TODO: If HAIKU_CD_NAME is set, that doesn't mean we're building a CD
-		# image!
-		# copy onto image
-		AddFilesToHaikuImage _packages_ : $(archiveFile) ;
-	} else {
-		# extract onto image
-		ExtractArchiveToHaikuImage $(dirTokens) : $(archiveFile) : $(flags) ;
-	}
-}
 
 rule AddEntryToHaikuImageUserGroupFile file : entry
 {
@@ -1312,7 +1274,8 @@ rule BuildHaikuImage haikuImage : scripts : isImage : isVMwareImage
 	SEARCH on $(mainScript) = [ FDirName $(HAIKU_TOP) build scripts ] ;
 
 	Depends $(haikuImage) : $(mainScript) $(scripts) ;
-	BuildHaikuImage1 $(haikuImage) : $(mainScript) $(scripts) ;
+	BuildHaikuImage1 $(haikuImage) : $(mainScript)
+		$(scripts:R=$(HAIKU_ABSOLUTE_OUTPUT_DIR)) ;
 }
 
 actions BuildHaikuImage1
@@ -1415,13 +1378,14 @@ rule CreateNetBootArchiveCopyFilesScript script
 
 rule BuildNetBootArchive archive : scripts
 {
-	# BuildNetBootArchive <archive> : <scripts>  ;
+	# BuildNetBootArchive <archive> : <scripts> ;
 
 	local mainScript = build_archive ;
 	SEARCH on $(mainScript) = [ FDirName $(HAIKU_TOP) build scripts ] ;
 
 	Depends $(archive) : $(mainScript) $(scripts) ;
-	BuildNetBootArchive1 $(archive) : $(mainScript) $(scripts) ;
+	BuildNetBootArchive1 $(archive) : $(mainScript)
+		$(scripts:R=$(HAIKU_ABSOLUTE_OUTPUT_DIR)) ;
 }
 
 actions BuildNetBootArchive1
@@ -1506,13 +1470,14 @@ rule CreateFloppyBootArchiveCopyFilesScript script
 
 rule BuildFloppyBootArchive archive : scripts
 {
-	# BuildHFloppyBootArchive <archive> : <scripts>  ;
+	# BuildHFloppyBootArchive <archive> : <scripts> ;
 
 	local mainScript = build_archive ;
 	SEARCH on $(mainScript) = [ FDirName $(HAIKU_TOP) build scripts ] ;
 
 	Depends $(archive) : $(mainScript) $(scripts) ;
-	BuildFloppyBootArchive1 $(archive) : $(mainScript) $(scripts) ;
+	BuildFloppyBootArchive1 $(archive) : $(mainScript)
+		$(scripts:R=$(HAIKU_ABSOLUTE_OUTPUT_DIR)) ;
 }
 
 actions BuildFloppyBootArchive1
@@ -1530,12 +1495,12 @@ rule BuildFloppyBootImage image : haikuLoader : archive
 	FLOPPY_IMAGE_SIZE on $(image) = $(HAIKU_BOOT_FLOPPY_IMAGE_SIZE) ;
 	ARCHIVE_IMAGE_OFFSET on $(image) = $(HAIKU_BOOT_ARCHIVE_IMAGE_OFFSET) ;
 	BuildFloppyBootImage1 $(image) : $(haikuLoader) $(archive) ;
-	if $(HAIKU_BOOT_PLATFORM) = atari_m68k {
+	if $(HAIKU_KERNEL_PLATFORM) = atari_m68k {
 		Depends $(image) : <build>fixup_tos_boot_checksum ;
 		BuildFloppyBootImageFixupM68K $(image)
 			: <build>fixup_tos_boot_checksum ;
 	}
-	if $(HAIKU_BOOT_PLATFORM) = amiga_m68k {
+	if $(HAIKU_KERNEL_PLATFORM) = amiga_m68k {
 		Depends $(image) : <build>fixup_amiga_boot_checksum ;
 		BuildFloppyBootImageFixupM68K $(image)
 			: <build>fixup_amiga_boot_checksum ;
@@ -1582,20 +1547,31 @@ actions BuildFloppyBootImageFixupM68K
 
 #pragma mark - CD Boot Image rules
 
-rule BuildCDBootImage image : bootfloppy : extrafiles
+rule BuildCDBootImage image : bootfloppy : bootefi : extrafiles
 {
 	Depends $(image) : $(bootfloppy) ;
+	Depends $(image) : $(bootefi) ;
 	Depends $(image) : $(extrafiles) ;
 	BOOTIMG on $(image) = $(bootfloppy) ;
 
-	BuildCDBootImage1 $(image) : $(bootfloppy) $(extrafiles) ;
+	if $(HAIKU_ANYBOOT_LEGACY) = 1 {
+		BuildCDBootImageMBR $(image) : $(bootfloppy) $(extrafiles) ;
+	} else {
+		BOOTEFI on $(image) = $(bootefi) ;
+		BuildCDBootImageEFI $(image) : $(bootfloppy) $(bootefi) $(extrafiles) ;
+	}
 }
 
-actions BuildCDBootImage1
+actions BuildCDBootImageMBR
 {
 	$(RM) $(<)
-	mkisofs -b $(BOOTIMG) -r -J -V bootimg -o $(<) $(>[1]) $(>[2-]) \
-		|| genisoimage  -b $(BOOTIMG) -r -J -V bootimg -o $(<) $(>[1]) $(>[2-])
+	mkisofs -b $(BOOTIMG) -r -J -V bootimg -o $(<) $(>[1]) $(>[2-])
+}
+
+actions BuildCDBootImageEFI
+{
+	$(RM) $(<)
+	mkisofs -b $(BOOTIMG) -eltorito-alt-boot -no-emul-boot -e $(BOOTEFI) -r -J -V bootimg -o $(<) $(>[1]) $(>[2]) $(>[3-])
 }
 
 
@@ -1639,4 +1615,21 @@ actions BuildCDBootPPCImage1 bind MAPS
 	$(RM) -r $(HAIKU_OUTPUT_DIR)/cd
 }
 
+#pragma mark - EFI System Partition rules
 
+rule BuildEfiSystemPartition image : efiLoader
+{
+	Depends $(image) : $(efiLoader) ;
+
+	BuildEfiSystemPartition1 $(image) : $(efiLoader) ;
+}
+
+actions BuildEfiSystemPartition1
+{
+	$(RM) $(<)
+	dd if=/dev/zero of=$(<) bs=1024 count=2880
+	mformat -i $(<) -n 36 -h 2 -t 80
+	mmd -D s -i $(<) ::/EFI
+	mmd -D s -i $(<) ::/EFI/BOOT
+	mcopy -D o -i $(<) $(>) ::/EFI/BOOT/BOOTX64.EFI
+}

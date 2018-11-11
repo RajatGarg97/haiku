@@ -12,6 +12,7 @@
 
 #include <stdio.h>
 
+#include <compat/sys/callout.h>
 #include <compat/sys/taskqueue.h>
 #include <compat/sys/haiku-module.h>
 
@@ -20,10 +21,12 @@
 #define TQ_FLAGS_BLOCKED	(1 << 1)
 #define TQ_FLAGS_PENDING	(1 << 2)
 
+#define	DT_CALLOUT_ARMED		(1 << 0)
+#define	DT_DRAIN_IN_PROGRESS	(1 << 1)
 
 struct taskqueue {
 	char tq_name[64];
-	mutex tq_mutex;
+	struct mtx tq_mutex;
 	struct list tq_list;
 	taskqueue_enqueue_fn tq_enqueue;
 	void *tq_arg;
@@ -34,10 +37,12 @@ struct taskqueue {
 	thread_id tq_thread_storage;
 	int tq_threadcount;
 	int tq_flags;
+	int tq_callouts;
 };
 
 struct taskqueue *taskqueue_fast = NULL;
 struct taskqueue *taskqueue_swi = NULL;
+struct taskqueue *taskqueue_thread = NULL;
 
 
 static struct taskqueue *
@@ -53,7 +58,7 @@ _taskqueue_create(const char *name, int mflags, int fast,
 	if (fast) {
 		B_INITIALIZE_SPINLOCK(&tq->tq_spinlock);
 	} else {
-		mutex_init_etc(&tq->tq_mutex, name, MUTEX_FLAG_CLONE_NAME);
+		mtx_init(&tq->tq_mutex, name, NULL, MTX_DEF);
 	}
 
 	strlcpy(tq->tq_name, name, sizeof(tq->tq_name));
@@ -65,6 +70,7 @@ _taskqueue_create(const char *name, int mflags, int fast,
 	tq->tq_threads = NULL;
 	tq->tq_threadcount = 0;
 	tq->tq_flags = TQ_FLAGS_ACTIVE;
+	tq->tq_callouts = 0;
 
 	return tq;
 }
@@ -77,7 +83,7 @@ tq_lock(struct taskqueue *taskQueue, cpu_status *status)
 		*status = disable_interrupts();
 		acquire_spinlock(&taskQueue->tq_spinlock);
 	} else {
-		mutex_lock(&taskQueue->tq_mutex);
+		mtx_lock(&taskQueue->tq_mutex);
 	}
 }
 
@@ -89,7 +95,7 @@ tq_unlock(struct taskqueue *taskQueue, cpu_status status)
 		release_spinlock(&taskQueue->tq_spinlock);
 		restore_interrupts(status);
 	} else {
-		mutex_unlock(&taskQueue->tq_mutex);
+		mtx_unlock(&taskQueue->tq_mutex);
 	}
 }
 
@@ -214,10 +220,15 @@ taskqueue_start_threads(struct taskqueue **taskQueue, int count, int priority,
 void
 taskqueue_free(struct taskqueue *taskQueue)
 {
+	if (taskQueue == NULL) {
+		printf("taskqueue_free called with NULL taskqueue\n");
+		return;
+	}
+
 	/* lock and  drain list? */
 	taskQueue->tq_flags &= ~TQ_FLAGS_ACTIVE;
 	if (!taskQueue->tq_fast)
-		mutex_destroy(&taskQueue->tq_mutex);
+		mtx_destroy(&taskQueue->tq_mutex);
 	if (taskQueue->tq_sem != -1) {
 		int i;
 
@@ -241,6 +252,11 @@ taskqueue_drain(struct taskqueue *taskQueue, struct task *task)
 {
 	cpu_status status;
 
+	if (taskQueue == NULL) {
+		printf("taskqueue_drain called with NULL taskqueue\n");
+		return;
+	}
+
 	tq_lock(taskQueue, &status);
 	while (task->ta_pending != 0) {
 		tq_unlock(taskQueue, status);
@@ -251,11 +267,36 @@ taskqueue_drain(struct taskqueue *taskQueue, struct task *task)
 }
 
 
-int
-taskqueue_enqueue(struct taskqueue *taskQueue, struct task *task)
+void
+taskqueue_drain_timeout(struct taskqueue *queue,
+	struct timeout_task *timeout_task)
 {
 	cpu_status status;
-	tq_lock(taskQueue, &status);
+	/*
+	 * Set flag to prevent timer from re-starting during drain:
+	 */
+	tq_lock(queue, &status);
+	KASSERT((timeout_task->f & DT_DRAIN_IN_PROGRESS) == 0,
+		("Drain already in progress"));
+	timeout_task->f |= DT_DRAIN_IN_PROGRESS;
+	tq_unlock(queue, status);
+
+	callout_drain(&timeout_task->c);
+	taskqueue_drain(queue, &timeout_task->t);
+
+	/*
+	 * Clear flag to allow timer to re-start:
+	 */
+	tq_lock(queue, &status);
+	timeout_task->f &= ~DT_DRAIN_IN_PROGRESS;
+	tq_unlock(queue, status);
+}
+
+
+static void
+taskqueue_enqueue_locked(struct taskqueue *taskQueue, struct task *task,
+	cpu_status status)
+{
 	/* we don't really support priorities */
 	if (task->ta_pending) {
 		task->ta_pending++;
@@ -268,7 +309,125 @@ taskqueue_enqueue(struct taskqueue *taskQueue, struct task *task)
 			taskQueue->tq_flags |= TQ_FLAGS_PENDING;
 	}
 	tq_unlock(taskQueue, status);
+}
+
+
+int
+taskqueue_enqueue(struct taskqueue *taskQueue, struct task *task)
+{
+	cpu_status status;
+
+	tq_lock(taskQueue, &status);
+	taskqueue_enqueue_locked(taskQueue, task, status);
+	/* The lock is released inside. */
+
 	return 0;
+}
+
+
+static void
+taskqueue_timeout_func(void *arg)
+{
+	struct taskqueue *queue;
+	struct timeout_task *timeout_task;
+	cpu_status status;
+		// dummy, as we should never get here on a spin taskqueue
+
+	timeout_task = arg;
+	queue = timeout_task->q;
+	KASSERT((timeout_task->f & DT_CALLOUT_ARMED) != 0, ("Stray timeout"));
+	timeout_task->f &= ~DT_CALLOUT_ARMED;
+	queue->tq_callouts--;
+	taskqueue_enqueue_locked(timeout_task->q, &timeout_task->t, status);
+	/* The lock is released inside. */
+}
+
+
+int
+taskqueue_enqueue_timeout(struct taskqueue *queue,
+	struct timeout_task *ttask, int _ticks)
+{
+	int res;
+	cpu_status status;
+
+	tq_lock(queue, &status);
+	KASSERT(ttask->q == NULL || ttask->q == queue,
+		("Migrated queue"));
+	ttask->q = queue;
+	res = ttask->t.ta_pending;
+	if (ttask->f & DT_DRAIN_IN_PROGRESS) {
+		/* Do nothing */
+		tq_unlock(queue, status);
+		res = -1;
+	} else if (_ticks == 0) {
+		tq_unlock(queue, status);
+		taskqueue_enqueue(queue, &ttask->t);
+	} else {
+		if ((ttask->f & DT_CALLOUT_ARMED) != 0) {
+			res++;
+		} else {
+			queue->tq_callouts++;
+			ttask->f |= DT_CALLOUT_ARMED;
+			if (_ticks < 0)
+				_ticks = -_ticks; /* Ignore overflow. */
+		}
+		tq_unlock(queue, status);
+		if (_ticks > 0) {
+			callout_reset(&ttask->c, _ticks,
+				taskqueue_timeout_func, ttask);
+		}
+	}
+	return (res);
+}
+
+
+static int
+taskqueue_cancel_locked(struct taskqueue *queue, struct task *task,
+	u_int *pendp)
+{
+	if (task->ta_pending > 0)
+		list_remove_item(&queue->tq_list, task);
+	if (pendp != NULL)
+		*pendp = task->ta_pending;
+	task->ta_pending = 0;
+	return 0;
+}
+
+
+int
+taskqueue_cancel(struct taskqueue *queue, struct task *task, u_int *pendp)
+{
+	int error;
+	cpu_status status;
+
+	tq_lock(queue, &status);
+	error = taskqueue_cancel_locked(queue, task, pendp);
+	tq_unlock(queue, status);
+
+	return (error);
+}
+
+
+int
+taskqueue_cancel_timeout(struct taskqueue *queue,
+	struct timeout_task *timeout_task, u_int *pendp)
+{
+	u_int pending, pending1;
+	int error;
+	cpu_status status;
+
+	tq_lock(queue, &status);
+	pending = !!(callout_stop(&timeout_task->c) > 0);
+	error = taskqueue_cancel_locked(queue, &timeout_task->t, &pending1);
+	if ((timeout_task->f & DT_CALLOUT_ARMED) != 0) {
+		timeout_task->f &= ~DT_CALLOUT_ARMED;
+		queue->tq_callouts--;
+	}
+	tq_unlock(queue, status);
+
+	if (pendp != NULL)
+		*pendp = pending + pending1;
+	return (error);
 }
 
 
@@ -296,12 +455,24 @@ taskqueue_create_fast(const char *name, int mflags,
 
 
 void
-task_init(struct task *task, int prio, task_handler_t handler, void *context)
+task_init(struct task *task, int prio, task_fn_t handler, void *context)
 {
 	task->ta_priority = prio;
 	task->ta_handler = handler;
 	task->ta_argument = context;
 	task->ta_pending = 0;
+}
+
+
+void
+timeout_task_init(struct taskqueue *queue, struct timeout_task *timeout_task,
+	int priority, task_fn_t func, void *context)
+{
+	TASK_INIT(&timeout_task->t, priority, func, context);
+	callout_init_mtx(&timeout_task->c, &queue->tq_mutex,
+		CALLOUT_RETURNUNLOCKED);
+	timeout_task->q = queue;
+	timeout_task->f = 0;
 }
 
 
@@ -336,7 +507,25 @@ init_taskqueues()
 			goto err_2;
 	}
 
+	if (HAIKU_DRIVER_REQUIRES(FBSD_THREAD_TASKQUEUE)) {
+		taskqueue_thread = taskqueue_create_fast("thread taskq", 0,
+			taskqueue_thread_enqueue, &taskqueue_thread);
+		if (taskqueue_thread == NULL) {
+			status = B_NO_MEMORY;
+			goto err_2;
+		}
+
+		status = taskqueue_start_threads(&taskqueue_thread, 1,
+			B_REAL_TIME_PRIORITY, "swi taskq");
+		if (status < B_OK)
+			goto err_3;
+	}
+
 	return B_OK;
+
+err_3:
+	if (taskqueue_thread)
+		taskqueue_free(taskqueue_thread);
 
 err_2:
 	if (taskqueue_swi)
@@ -353,6 +542,9 @@ err_1:
 void
 uninit_taskqueues()
 {
+	if (HAIKU_DRIVER_REQUIRES(FBSD_THREAD_TASKQUEUE))
+		taskqueue_free(taskqueue_thread);
+
 	if (HAIKU_DRIVER_REQUIRES(FBSD_SWI_TASKQUEUE))
 		taskqueue_free(taskqueue_swi);
 

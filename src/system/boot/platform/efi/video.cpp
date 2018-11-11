@@ -84,7 +84,7 @@ static video_mode*
 closest_video_mode(uint32 width, uint32 height, uint32 depth)
 {
 	video_mode *bestMode = NULL;
-	uint32 bestDiff = 0;
+	int64 bestDiff = 0;
 
 	video_mode *mode = NULL;
 	while ((mode = (video_mode*)list_get_next_item(&sModeList, mode)) != NULL) {
@@ -94,8 +94,9 @@ closest_video_mode(uint32 width, uint32 height, uint32 depth)
 			continue;
 		}
 
-		uint32 diff = 2 * abs(mode->width - width) + abs(mode->height - height)
-			+ abs(mode->bits_per_pixel - depth);
+		int64 diff = 2 * abs((int64)mode->width - width)
+			+ abs((int64)mode->height - height)
+			+ abs((int64)mode->bits_per_pixel - depth);
 
 		if (bestMode == NULL || bestDiff > diff) {
 			bestMode = mode;
@@ -117,8 +118,6 @@ get_mode_from_settings(void)
 	if (handle == NULL)
 		return;
 
-	bool found = false;
-
 	const driver_settings *settings = get_driver_settings(handle);
 	if (settings == NULL)
 		goto out;
@@ -128,17 +127,16 @@ get_mode_from_settings(void)
 	for (int32 i = 0; i < settings->parameter_count; i++) {
 		driver_parameter &parameter = settings->parameters[i];
 
-		if (strcmp(parameter.name, "mode") == 0 && parameter.value_count > 2) {
-			uint32 width = strtoul(parameter.values[0], NULL, 0);
-			uint32 height = strtoul(parameter.values[1], NULL, 0);
-			uint32 depth = strtoul(parameter.values[2], NULL, 0);
+		if (parameter.value_count < 3 || strcmp(parameter.name, "mode") != 0) continue;
+		uint32 width = strtoul(parameter.values[0], NULL, 0);
+		uint32 height = strtoul(parameter.values[1], NULL, 0);
+		uint32 depth = strtoul(parameter.values[2], NULL, 0);
 
-			// search mode that fits
-			video_mode *mode = closest_video_mode(width, height, depth);
-			if (mode != NULL) {
-				found = true;
-				sGraphicsMode = mode->mode;
-			}
+		// search mode that fits
+		video_mode *mode = closest_video_mode(width, height, depth);
+		if (mode != NULL) {
+			sGraphicsMode = mode->mode;
+			break;
 		}
 	}
 

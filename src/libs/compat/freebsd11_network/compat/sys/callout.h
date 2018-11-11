@@ -9,30 +9,18 @@
 
 
 #include <sys/haiku-module.h>
-
-#include <sys/queue.h>
-
-
-struct callout {
-	struct list_link	link;
-	bigtime_t			due;
-	uint32				flags;
-
-	void *				c_arg;
-	void				(*c_func)(void *);
-	struct mtx *		c_mtx;
-	int					c_flags;
-};
+#include <sys/_callout.h>
 
 
-#define CALLOUT_MPSAFE	0x0001
+#define	CALLOUT_MPSAFE			0x0008 /* deprecated */
+#define	CALLOUT_RETURNUNLOCKED	0x0010 /* handler returns with mtx unlocked */
 
 
 void callout_init(struct callout *c, int mpsafe);
 void callout_init_mtx(struct callout *c, struct mtx *mutex, int flags);
 /* Time values are in ticks, see compat/sys/kernel.h for its definition */
-int	callout_schedule(struct callout *c, int ticks);
-int	callout_reset(struct callout *c, int ticks, void (*func)(void *), void *arg);
+int callout_schedule(struct callout *c, int _ticks);
+int callout_reset(struct callout *c, int _ticks, void (*func)(void *), void *arg);
 int callout_pending(struct callout *c);
 int callout_active(struct callout *c);
 

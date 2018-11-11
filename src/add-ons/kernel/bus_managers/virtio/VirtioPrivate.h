@@ -45,8 +45,8 @@ public:
 			status_t			InitCheck();
 			uint32				ID() const { return fID; }
 
-			status_t 			NegociateFeatures(uint32 supported,
-									uint32* negociated,
+			status_t 			NegotiateFeatures(uint32 supported,
+									uint32* negotiated,
 									const char* (*get_feature_name)(uint32));
 
 			status_t			ReadDeviceConfig(uint8 offset, void* buffer,
@@ -56,8 +56,10 @@ public:
 
 			status_t			AllocateQueues(size_t count,
 									virtio_queue *queues);
+			void				FreeQueues();
 			status_t			SetupInterrupt(virtio_intr_func config_handler,
 									void *driverCookie);
+			status_t			FreeInterrupts();
 
 			uint16				Alignment() const { return fAlignment; }
 			uint32				Features() const { return fFeatures; }
@@ -72,9 +74,11 @@ public:
 			status_t			ConfigInterrupt();
 
 private:
-			void				DumpFeatures(const char* title,
+			void				_DumpFeatures(const char* title,
 									uint32 features,
 									const char* (*get_feature_name)(uint32));
+			void				_DestroyQueues(size_t count);
+
 
 
 			device_node *		fNode;
@@ -114,16 +118,20 @@ public:
 			status_t			QueueRequest(const physical_entry* vector,
 									size_t readVectorCount,
 									size_t writtenVectorCount,
-									virtio_callback_func callback,
-									void *callbackCookie);
+									void *cookie);
 			status_t			QueueRequestIndirect(
 									const physical_entry* vector,
 									size_t readVectorCount,
 									size_t writtenVectorCount,
-									virtio_callback_func callback,
-									void *callbackCookie);
+									void *cookie);
+
+			status_t			SetupInterrupt(virtio_callback_func handler,
+									void *cookie);
+
 			void				EnableInterrupt();
 			void				DisableInterrupt();
+
+			void*				Dequeue(uint16* _size = NULL);
 
 private:
 			void				UpdateAvailable(uint16 index);
@@ -132,7 +140,6 @@ private:
 									const physical_entry* vector,
 									size_t readVectorCount,
 									size_t writtenVectorCount);
-			void				Finish();
 
 			VirtioDevice*		fDevice;
 			uint16				fQueueNumber;
@@ -149,6 +156,10 @@ private:
 			uint16				fIndirectMaxSize;
 
 			TransferDescriptor**	fDescriptors;
+
+			virtio_callback_func fCallback;
+			void*				fCookie;
+
 };
 
 #endif // VIRTIO_PRIVATE_H

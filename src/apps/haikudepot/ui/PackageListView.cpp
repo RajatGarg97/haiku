@@ -1,4 +1,5 @@
 /*
+ * Copyright 2018, Andrew Lindesay, <apl@lindesay.co.nz>.
  * Copyright 2017, Julian Harnath, <julian.harnath@rwth-aachen.de>.
  * Copyright 2015, Axel Dörfler, <axeld@pinc-software.de>.
  * Copyright 2013-2014, Stephan Aßmus <superstippi@gmx.de>.
@@ -14,8 +15,8 @@
 #include <Autolock.h>
 #include <Catalog.h>
 #include <ControlLook.h>
-#include <MessageFormat.h>
 #include <ScrollBar.h>
+#include <StringFormat.h>
 #include <StringForSize.h>
 #include <package/hpkg/Strings.h>
 #include <Window.h>
@@ -331,10 +332,12 @@ PackageColumn::DrawField(BField* field, BRect rect, BView* parent)
 	if (bitmapField != NULL) {
 		const BBitmap* bitmap = bitmapField->Bitmap();
 
+		// Scale the bitmap to 16x16
+		BRect r = BRect(0, 0, 15, 15);
+
 		// figure out the placement
 		float x = 0.0;
-		BRect r = bitmap ? bitmap->Bounds() : BRect(0, 0, 15, 15);
-		float y = rect.top + ((rect.Height() - r.Height()) / 2);
+		float y = rect.top + ((rect.Height() - r.Height()) / 2) - 1;
 		float width = 0.0;
 
 		switch (Alignment()) {
@@ -363,7 +366,8 @@ PackageColumn::DrawField(BField* field, BRect rect, BView* parent)
 		// draw the bitmap
 		if (bitmap != NULL) {
 			parent->SetDrawingMode(B_OP_ALPHA);
-			parent->DrawBitmap(bitmap, BPoint(x, y));
+			BRect viewRect(x, y, x + 15, y + 15);
+			parent->DrawBitmap(bitmap, bitmap->Bounds(), viewRect);
 			parent->SetDrawingMode(B_OP_OVER);
 		}
 
@@ -660,12 +664,16 @@ public:
 		SetViewUIColor(B_PANEL_BACKGROUND_COLOR);
 		SetLowUIColor(ViewUIColor());
 		SetHighUIColor(LowUIColor(), B_DARKEN_4_TINT);
+
+		// constantly calculating the size is expensive so here a sensible
+		// upper limit on the number of packages is arbitrarily chosen.
+		fMinSize = BSize(StringWidth(_DeriveLabel(999999)) + 10,
+			B_H_SCROLL_BAR_HEIGHT);
 	}
 
 	virtual BSize MinSize()
 	{
-		BString label(_GetLabel());
-		return BSize(StringWidth(label) + 10, B_H_SCROLL_BAR_HEIGHT);
+		return fMinSize;
 	}
 
 	virtual BSize PreferredSize()
@@ -682,13 +690,11 @@ public:
 	{
 		FillRect(updateRect, B_SOLID_LOW);
 
-		BString label(_GetLabel());
-
 		font_height fontHeight;
 		GetFontHeight(&fontHeight);
 
 		BRect bounds(Bounds());
-		float width = StringWidth(label);
+		float width = StringWidth(fLabel);
 
 		BPoint offset;
 		offset.x = bounds.left + (bounds.Width() - width) / 2.0f;
@@ -696,32 +702,38 @@ public:
 			- (fontHeight.ascent + fontHeight.descent)) / 2.0f
 			+ fontHeight.ascent;
 
-		DrawString(label, offset);
+		DrawString(fLabel, offset);
 	}
 
 	void SetItemCount(int32 count)
 	{
 		if (count == fItemCount)
 			return;
-		BSize minSize = MinSize();
 		fItemCount = count;
-		if (minSize != MinSize())
-			InvalidateLayout();
+		fLabel = _DeriveLabel(fItemCount);
 		Invalidate();
 	}
 
 private:
-	BString _GetLabel() const
-	{
-		static BMessageFormat format(B_TRANSLATE("{0, plural, "
-			"one{# item} other{# items}}"));
 
+/*! This method is hit quite often when the list of packages in the
+    table-view are updated.  Derivation of the plural for some
+    languages such as Russian can be slow so this method should be
+    called sparingly.
+*/
+
+	BString _DeriveLabel(int32 count) const
+	{
+		static BStringFormat format(B_TRANSLATE("{0, plural, "
+			"one{# item} other{# items}}"));
 		BString label;
-		format.Format(label, fItemCount);
+		format.Format(label, count);
 		return label;
 	}
 
 	int32		fItemCount;
+	BString		fLabel;
+	BSize		fMinSize;
 };
 
 
@@ -760,7 +772,7 @@ struct PackageListView::RowByNameHashDefinition {
 
 PackageListView::PackageListView(BLocker* modelLock)
 	:
-	BColumnListView("package list view", 0, B_FANCY_BORDER, true),
+	BColumnListView(B_TRANSLATE("All packages"), 0, B_FANCY_BORDER, true),
 	fModelLock(modelLock),
 	fPackageListener(new(std::nothrow) PackageListener(this)),
 	fRowByNameTable(new RowByNameTable()),

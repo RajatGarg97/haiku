@@ -115,8 +115,10 @@ Application HaikuDepot :
 	TarArchiveService.cpp
 
 	#util
-	ToFileUrlProtocolListener.cpp
+	DataIOUtils.cpp
+	RepositoryUrlUtils.cpp
 	StorageUtils.cpp
+	ToFileUrlProtocolListener.cpp
 
 	# package_daemon
 	ProblemWindow.cpp
@@ -145,6 +147,7 @@ DoCatalogs HaikuDepot :
 	RatePackageWindow.cpp
 	ScreenshotWindow.cpp
 	UserLoginWindow.cpp
+	WorkStatusView.cpp
 ;
 
 Application TextDocumentTest :

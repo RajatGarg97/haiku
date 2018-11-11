@@ -6,11 +6,13 @@
 #include "bbitmap/BitmapTest.h"
 #include "bdeskbar/DeskbarTest.h"
 #include "bpolygon/PolygonTest.h"
+#include "bmenu/MenuTest.h"
 #include "bregion/RegionTest.h"
 #include "btextcontrol/TextControlTest.h"
 #include "btextview/TextViewTest.h"
 //#include "bwidthbuffer/WidthBufferTest.h"
 #include "GraphicsDefsTest.h"
+#include "OutlineListViewTest.h"
 
 
 BTestSuite *
@@ -22,6 +24,8 @@ getTestSuite()
 	suite->addTest("BAlert", AlertTest::Suite());
 	suite->addTest("BBitmap", BitmapTestSuite());
 	suite->addTest("BDeskbar", DeskbarTestSuite());
+	suite->addTest("BOutlineListView", OutlineListViewTestSuite());
+	suite->addTest("BMenu", MenuTestSuite());
 	suite->addTest("BPolygon", PolygonTestSuite());
 	suite->addTest("BRegion", RegionTestSuite());
 	suite->addTest("BTextControl", TextControlTestSuite());

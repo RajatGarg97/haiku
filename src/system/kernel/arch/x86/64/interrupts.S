@@ -242,7 +242,7 @@ FUNCTION_END(int_bottom)
 
 // Handler for an interrupt that occurred in user-mode.
 STATIC_FUNCTION(int_bottom_user):
-	// Load the kerrnel GS segment base.
+	// Load the kernel GS segment base.
 	swapgs
 
 	// Push the rest of the interrupt frame to the stack.
@@ -343,6 +343,9 @@ FUNCTION(x86_64_syscall_entry):
 	movq	%rsp, %gs:ARCH_THREAD_user_rsp
 	movq	%gs:ARCH_THREAD_syscall_rsp, %rsp
 
+	// The following pushes de-align the stack by 8 bytes, so account for that first.
+	sub 	$8, %rsp
+
 	// Set up an iframe on the stack (R11 = saved RFLAGS, RCX = saved RIP).
 	push	$USER_DATA_SELECTOR			// ss
 	push	%gs:ARCH_THREAD_user_rsp	// rsp
@@ -357,7 +360,6 @@ FUNCTION(x86_64_syscall_entry):
 
 	// Frame pointer is the iframe.
 	movq	%rsp, %rbp
-	andq	$~15, %rsp
 
 	// Preserve call number (R14 is callee-save), get thread pointer.
 	movq	%rax, %r14

@@ -22,32 +22,6 @@ extern "C" {
   #define TRACE(a...)
 #endif
 
-#if LIBAVCODEC_VERSION_INT < ((54 << 16) | (50 << 8))
-#define AVPixelFormat PixelFormat
-#define AV_PIX_FMT_NONE PIX_FMT_NONE
-#define AV_PIX_FMT_YUV410P PIX_FMT_YUV410P
-#define AV_PIX_FMT_YUV411P PIX_FMT_YUV411P
-#define AV_PIX_FMT_YUV420P PIX_FMT_YUV420P
-#define AV_PIX_FMT_YUVJ420P PIX_FMT_YUVJ420P
-#define AV_PIX_FMT_YUV422P PIX_FMT_YUV422P
-#define AV_PIX_FMT_YUVJ422P PIX_FMT_YUVJ422P
-#define AV_PIX_FMT_YUYV422 PIX_FMT_YUYV422
-#define AV_PIX_FMT_YUV420P10LE PIX_FMT_YUV420P10LE
-#define AV_PIX_FMT_YUV444P PIX_FMT_YUV444P
-#define AV_PIX_FMT_RGB24 PIX_FMT_RGB24
-#define AV_PIX_FMT_BGR24 PIX_FMT_BGR24
-#define AV_PIX_FMT_RGB565 PIX_FMT_RGB565
-#define AV_PIX_FMT_RGB555 PIX_FMT_RGB555
-#define AV_PIX_FMT_GRAY8 PIX_FMT_GRAY8
-#define AV_PIX_FMT_MONOBLACK PIX_FMT_MONOBLACK
-#define AV_PIX_FMT_PAL8 PIX_FMT_PAL8
-#define AV_PIX_FMT_BGR32 PIX_FMT_BGR32
-#define AV_PIX_FMT_BGR565 PIX_FMT_BGR565
-#define AV_PIX_FMT_BGR555 PIX_FMT_BGR555
-#define AV_PIX_FMT_RGB32 PIX_FMT_RGB32
-#define AV_PIX_FMT_GBRP PIX_FMT_GBRP
-#endif
-
 
 //! This function will try to find the best colorspaces for both the ff-codec
 // and the Media Kit sides.
@@ -72,7 +46,7 @@ resolve_colorspace(color_space colorSpace, AVPixelFormat pixelFormat, int width,
 
 			if (pixelFormat == AV_PIX_FMT_YUV420P
 				|| pixelFormat == AV_PIX_FMT_YUVJ420P) {
-#ifndef __x86_64__
+#if 0
 				if (cpu.HasSSSE3() && width % 8 == 0 && height % 2 == 0) {
 					TRACE("resolve_colorspace: gfx_conv_yuv420p_rgba32_ssse3\n");
 					return gfx_conv_yuv420p_rgba32_ssse3;
@@ -91,7 +65,7 @@ resolve_colorspace(color_space colorSpace, AVPixelFormat pixelFormat, int width,
 
 			if (pixelFormat == AV_PIX_FMT_YUV422P
 				|| pixelFormat == AV_PIX_FMT_YUVJ422P) {
-#ifndef __x86_64__
+#if 0
 				if (cpu.HasSSSE3() && width % 8 == 0) {
 					TRACE("resolve_colorspace: gfx_conv_yuv422p_RGB32_ssse3\n");
 					return gfx_conv_yuv422p_rgba32_ssse3;
@@ -113,7 +87,7 @@ resolve_colorspace(color_space colorSpace, AVPixelFormat pixelFormat, int width,
 
 			// Packed Formats
 			if (pixelFormat == AV_PIX_FMT_YUYV422) {
-#ifndef __x86_64__
+#if 0
 				if (cpu.HasSSSE3() && width % 8 == 0) {
 					return gfx_conv_yuv422_rgba32_ssse3;
 				} else if (cpu.HasSSE2() && width % 8 == 0) {

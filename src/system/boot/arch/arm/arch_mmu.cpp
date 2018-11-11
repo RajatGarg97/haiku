@@ -86,23 +86,13 @@ struct memblock {
 };
 
 
-#warning TODO: Plot pref. base from fdt!
 static struct memblock LOADER_MEMORYMAP[] = {
-/*
-	{
-		"devices",
-		DEVICE_BASE,
-		DEVICE_BASE + DEVICE_SIZE - 1,
-		ARM_MMU_L2_FLAG_B,
-	},
-*/
 	{
 		"RAM_kernel", // 8MB space for kernel, drivers etc
 		KERNEL_LOAD_BASE,
 		KERNEL_LOAD_BASE + kMaxKernelSize - 1,
 		ARM_MMU_L2_FLAG_C,
 	},
-
 #ifdef FB_BASE
 	{
 		"framebuffer", // 2MB framebuffer ram
@@ -344,6 +334,92 @@ mmu_map_identity(addr_t start, size_t end, int flags)
 	}
 }
 
+
+static void
+map_pages_loader()
+{
+	for (uint32 i = 0; i < B_COUNT_OF(LOADER_MEMORYMAP); i++) {
+
+		TRACE(("BLOCK: %s START: %lx END %lx\n", LOADER_MEMORYMAP[i].name,
+			LOADER_MEMORYMAP[i].start, LOADER_MEMORYMAP[i].end));
+
+		addr_t address = LOADER_MEMORYMAP[i].start;
+		ASSERT((address & ~ARM_PTE_ADDRESS_MASK) == 0);
+
+		mmu_map_identity(LOADER_MEMORYMAP[i].start, LOADER_MEMORYMAP[i].end,
+			LOADER_MEMORYMAP[i].flags);
+	}
+}
+
+
+//TODO:move this to generic/ ?
+static status_t
+fdt_map_memory_ranges(const char* path, bool physical = false)
+{
+	int node;
+	const void *prop;
+	int len;
+	uint64 total;
+
+	dprintf("checking FDT for %s...\n", path);
+	node = fdt_path_offset(gFDT, path);
+
+	total = 0;
+
+	int32 regAddressCells = 1;
+	int32 regSizeCells = 1;
+	fdt_get_cell_count(gFDT, node, regAddressCells, regSizeCells);
+
+	prop = fdt_getprop(gFDT, node, "reg", &len);
+	if (prop == NULL) {
+		dprintf("Unable to locate %s in FDT!\n", path);
+		return B_ERROR;
+	}
+
+	const uint32 *p = (const uint32 *)prop;
+	for (int32 i = 0; len; i++) {
+		uint64 base;
+		uint64 size;
+		if (regAddressCells == 2)
+			base = fdt64_to_cpu(*(uint64_t *)p);
+		else
+			base = fdt32_to_cpu(*(uint32_t *)p);
+		p += regAddressCells;
+		if (regSizeCells == 2)
+			size = fdt64_to_cpu(*(uint64_t *)p);
+		else
+			size = fdt32_to_cpu(*(uint32_t *)p);
+		p += regSizeCells;
+		len -= sizeof(uint32) * (regAddressCells + regSizeCells);
+
+		if (size <= 0) {
+			dprintf("%ld: empty region\n", i);
+			continue;
+		}
+		dprintf("%" B_PRIu32 ": base = %" B_PRIu64 ","
+			"size = %" B_PRIu64 "\n", i, base, size);
+
+		total += size;
+
+		if (physical) {
+			if (insert_physical_memory_range(base, size) != B_OK) {
+				dprintf("cannot map physical memory range "
+					"(num ranges = %" B_PRIu32 ")!\n",
+					gKernelArgs.num_physical_memory_ranges);
+				return B_ERROR;
+			}
+		} else {
+			mmu_map_identity(base, base + size, ARM_MMU_L2_FLAG_B);
+		}
+	}
+
+	dprintf("total '%s' physical memory = %" B_PRId64 "MB\n", path,
+		total / (1024 * 1024));
+
+	return B_OK;
+}
+
+
 void
 init_page_directory()
 {
@@ -362,17 +438,13 @@ init_page_directory()
 	// map our page directory region (TODO should not be identity mapped)
 	mmu_map_identity((addr_t)sPageDirectory, sPageTableRegionEnd, ARM_MMU_L2_FLAG_C);
 
-	for (uint32 i = 0; i < B_COUNT_OF(LOADER_MEMORYMAP); i++) {
+	// map our well known / static pages
+	map_pages_loader();
 
-		TRACE(("BLOCK: %s START: %lx END %lx\n", LOADER_MEMORYMAP[i].name,
-			LOADER_MEMORYMAP[i].start, LOADER_MEMORYMAP[i].end));
-
-		addr_t address = LOADER_MEMORYMAP[i].start;
-		ASSERT((address & ~ARM_PTE_ADDRESS_MASK) == 0);
-
-		mmu_map_identity(LOADER_MEMORYMAP[i].start, LOADER_MEMORYMAP[i].end,
-			LOADER_MEMORYMAP[i].flags);
-	}
+	// map peripheral devices (such as uart) from fdt
+	// TODO: Iterate over for "simple-bus" compatible devices!
+	// this assumes /axi which is broadcom!
+	fdt_map_memory_ranges("/axi");
 
 	mmu_flush_TLB();
 
@@ -620,69 +692,6 @@ mmu_init_for_kernel(void)
 }
 
 
-//TODO:move this to generic/ ?
-static status_t
-find_physical_memory_ranges(uint64 &total)
-{
-	int node;
-	const void *prop;
-	int len;
-
-	dprintf("checking for memory...\n");
-	// let's just skip the OF way (prop memory on /chosen)
-	//node = fdt_path_offset(gFDT, "/chosen");
-	node = fdt_path_offset(gFDT, "/memory");
-	// TODO: check devicetype=="memory" ?
-
-	total = 0;
-
-	int32 regAddressCells = 1;
-	int32 regSizeCells = 1;
-	fdt_get_cell_count(gFDT, node, regAddressCells, regSizeCells);
-
-	prop = fdt_getprop(gFDT, node, "reg", &len);
-	if (prop == NULL) {
-		panic("FDT /memory reg property not set");
-		return B_ERROR;
-	}
-
-	const uint32 *p = (const uint32 *)prop;
-	for (int32 i = 0; len; i++) {
-		uint64 base;
-		uint64 size;
-		if (regAddressCells == 2)
-			base = fdt64_to_cpu(*(uint64_t *)p);
-		else
-			base = fdt32_to_cpu(*(uint32_t *)p);
-		p += regAddressCells;
-		if (regSizeCells == 2)
-			size = fdt64_to_cpu(*(uint64_t *)p);
-		else
-			size = fdt32_to_cpu(*(uint32_t *)p);
-		p += regSizeCells;
-		len -= sizeof(uint32) * (regAddressCells + regSizeCells);
-
-		if (size <= 0) {
-			dprintf("%ld: empty region\n", i);
-			continue;
-		}
-		dprintf("%" B_PRIu32 ": base = %" B_PRIu64 ","
-			"size = %" B_PRIu64 "\n", i, base, size);
-
-		total += size;
-
-		if (insert_physical_memory_range(base, size) != B_OK) {
-			dprintf("cannot map physical memory range "
-				"(num ranges = %" B_PRIu32 ")!\n",
-				gKernelArgs.num_physical_memory_ranges);
-			return B_ERROR;
-		}
-	}
-
-	return B_OK;
-}
-
-
 extern "C" void
 mmu_init(void)
 {
@@ -692,22 +701,19 @@ mmu_init(void)
 	if (gKernelArgs.num_physical_memory_ranges == 0) {
 		// get map of physical memory (fill in kernel_args structure)
 
-		uint64 total;
-		if (find_physical_memory_ranges(total) != B_OK) {
-			dprintf("Error: could not find physical memory ranges!\n");
+		if (fdt_map_memory_ranges("/memory", true) != B_OK) {
+			panic("Error: could not find physical memory ranges from FDT!\n");
 
 #ifdef SDRAM_BASE
 			dprintf("Defaulting to 32MB at %" B_PRIx64 "\n", (uint64)SDRAM_BASE);
 			// specify available physical memory, using 32MB for now, since our
 			// ARMv5 targets have very little by default.
-			total = 32 * 1024 * 1024;
+			uint64 total = 32 * 1024 * 1024;
 			insert_physical_memory_range(SDRAM_BASE, total);
 #else
 			return /*B_ERROR*/;
 #endif
 		}
-		dprintf("total physical memory = %" B_PRId64 "MB\n",
-			total / (1024 * 1024));
 	}
 
 	// see if subpages are disabled

@@ -16,6 +16,14 @@ class BPartition;
 class BPath;
 
 
+enum mount_mode {
+	kNoVolumes,
+	kOnlyBFSVolumes,
+	kAllVolumes,
+	kRestorePreviousVolumes
+};
+
+
 class AutoMounter : public BServer {
 public:
 								AutoMounter();
@@ -26,13 +34,6 @@ public:
 	virtual	bool				QuitRequested();
 
 private:
-			enum mount_mode {
-				kNoVolumes,
-				kOnlyBFSVolumes,
-				kAllVolumes,
-				kRestorePreviousVolumes
-			};
-
 			void				_GetSettings(BMessage* message);
 
 			void				_MountVolumes(mount_mode normal,
@@ -59,6 +60,8 @@ private:
 
 	static	bool				_SuggestMountFlags(const BPartition* partition,
 									uint32* _flags);
+
+		friend class MountVisitor;
 
 private:
 			mount_mode			fNormalMode;

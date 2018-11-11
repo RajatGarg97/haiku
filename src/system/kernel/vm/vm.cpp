@@ -2102,21 +2102,19 @@ vm_clone_area(team_id team, const char* name, void** address,
 
 	VMCache* cache = vm_area_get_locked_cache(sourceArea);
 
-	// TODO: for now, B_USER_CLONEABLE is disabled, until all drivers
-	//	have been adapted. Maybe it should be part of the kernel settings,
-	//	anyway (so that old drivers can always work).
-#if 0
-	if (sourceArea->aspace == VMAddressSpace::Kernel()
-		&& addressSpace != VMAddressSpace::Kernel()
+	if (!kernel && sourceAddressSpace == VMAddressSpace::Kernel()
+		&& targetAddressSpace != VMAddressSpace::Kernel()
 		&& !(sourceArea->protection & B_USER_CLONEABLE_AREA)) {
 		// kernel areas must not be cloned in userland, unless explicitly
 		// declared user-cloneable upon construction
-		status = B_NOT_ALLOWED;
-	} else
+#if KDEBUG
+		panic("attempting to clone kernel area \"%s\" (%" B_PRId32 ")!",
+			sourceArea->name, sourceID);
 #endif
-	if (sourceArea->cache_type == CACHE_TYPE_NULL)
 		status = B_NOT_ALLOWED;
-	else {
+	} else if (sourceArea->cache_type == CACHE_TYPE_NULL) {
+		status = B_NOT_ALLOWED;
+	} else {
 		virtual_address_restrictions addressRestrictions = {};
 		addressRestrictions.address = *address;
 		addressRestrictions.address_specification = addressSpec;
@@ -4250,16 +4248,15 @@ vm_page_fault(addr_t address, addr_t faultAddress, bool isWrite, bool isExecute,
 					"0x%lx, ip 0x%lx\n", address, faultAddress);
 			}
 		} else {
-#if 1
-			// TODO: remove me once we have proper userland debugging support
-			// (and tools)
+			Thread* thread = thread_get_current_thread();
+
+#ifdef TRACE_FAULTS
 			VMArea* area = NULL;
 			if (addressSpace != NULL) {
 				addressSpace->ReadLock();
 				area = addressSpace->LookupArea(faultAddress);
 			}
 
-			Thread* thread = thread_get_current_thread();
 			dprintf("vm_page_fault: thread \"%s\" (%" B_PRId32 ") in team "
 				"\"%s\" (%" B_PRId32 ") tried to %s address %#lx, ip %#lx "
 				"(\"%s\" +%#lx)\n", thread->name, thread->id,
@@ -4267,60 +4264,6 @@ vm_page_fault(addr_t address, addr_t faultAddress, bool isWrite, bool isExecute,
 				isWrite ? "write" : (isExecute ? "execute" : "read"), address,
 				faultAddress, area ? area->name : "???", faultAddress - (area ?
 					area->Base() : 0x0));
-
-			// We can print a stack trace of the userland thread here.
-// TODO: The user_memcpy() below can cause a deadlock, if it causes a page
-// fault and someone is already waiting for a write lock on the same address
-// space. This thread will then try to acquire the lock again and will
-// be queued after the writer.
-#	if 0
-			if (area) {
-				struct stack_frame {
-					#if defined(__INTEL__) || defined(__POWERPC__) || defined(__M68K__)
-						struct stack_frame*	previous;
-						void*				return_address;
-					#else
-						// ...
-					#warning writeme
-					#endif
-				} frame;
-#		ifdef __INTEL__
-				struct iframe* iframe = x86_get_user_iframe();
-				if (iframe == NULL)
-					panic("iframe is NULL!");
-
-				status_t status = user_memcpy(&frame, (void*)iframe->ebp,
-					sizeof(struct stack_frame));
-#		elif defined(__POWERPC__)
-				struct iframe* iframe = ppc_get_user_iframe();
-				if (iframe == NULL)
-					panic("iframe is NULL!");
-
-				status_t status = user_memcpy(&frame, (void*)iframe->r1,
-					sizeof(struct stack_frame));
-#		else
-#			warning "vm_page_fault() stack trace won't work"
-				status = B_ERROR;
-#		endif
-
-				dprintf("stack trace:\n");
-				int32 maxFrames = 50;
-				while (status == B_OK && --maxFrames >= 0
-						&& frame.return_address != NULL) {
-					dprintf("  %p", frame.return_address);
-					area = addressSpace->LookupArea(
-						(addr_t)frame.return_address);
-					if (area) {
-						dprintf(" (%s + %#lx)", area->name,
-							(addr_t)frame.return_address - area->Base());
-					}
-					dprintf("\n");
-
-					status = user_memcpy(&frame, frame.previous,
-						sizeof(struct stack_frame));
-				}
-			}
-#	endif	// 0 (stack trace)
 
 			if (addressSpace != NULL)
 				addressSpace->ReadUnlock();

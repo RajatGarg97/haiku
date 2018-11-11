@@ -85,8 +85,40 @@ static void testDrawStringWithOffsets(BView* view, BRect frame)
 	view->StrokeLine(BPoint(frame.left, baseline - 1), BPoint(frame.right, baseline -1));
 
 	view->SetHighColor(kBlack);
-	const BPoint pointArray[] = { BPoint(frame.left, baseline) };
-	view->DrawString("Haiku [ÖÜÄöüä]", pointArray, sizeof(pointArray) / sizeof(pointArray[0]));
+	BPoint point(frame.left, baseline);
+	BPoint pointArray[] = {
+		point,
+		point,
+		point,
+		point,
+		point
+	};
+	
+	for (size_t i = 1; i < (sizeof(pointArray) / sizeof(pointArray[0])); i++)
+		pointArray[i] = pointArray[i - 1] + BPoint(10, 0);
+
+	view->DrawString("Haiku", pointArray, sizeof(pointArray) / sizeof(pointArray[0]));
+}
+
+
+static void testDrawStringWithoutPosition(BView* view, BRect frame)
+{
+	BFont font;
+	view->GetFont(&font);
+	font_height height;
+	font.GetHeight(&height);
+	float baseline = frame.bottom - height.descent;
+	// draw base line
+	view->SetHighColor(kGreen);
+	view->StrokeLine(BPoint(frame.left, baseline - 1), BPoint(frame.right, baseline -1));
+
+	view->SetHighColor(kBlack);
+	view->MovePenTo(BPoint(frame.left, baseline));
+	view->DrawString("H");
+	view->DrawString("a");
+	view->DrawString("i");
+	view->DrawString("k");
+	view->DrawString("u");
 }
 
 
@@ -1006,6 +1038,54 @@ static void testFontRotation(BView* view, BRect frame)
 }
 
 
+static void testClipToRect(BView* view, BRect frame)
+{
+	BRect clipped = frame;
+	clipped.InsetBy(5, 5);
+	
+	view->ClipToRect(clipped);
+	
+	view->FillRect(frame);
+}
+
+
+static void testClipToInverseRect(BView* view, BRect frame)
+{
+	BRect clipped = frame;
+	clipped.InsetBy(5, 5);
+	
+	view->ClipToInverseRect(clipped);
+	
+	view->FillRect(frame);
+}
+
+
+static void testClipToShape(BView* view, BRect frame)
+{
+	frame.InsetBy(2, 2);
+	BShape shape;
+	shape.MoveTo(BPoint(frame.left, frame.bottom));
+	shape.LineTo(BPoint(frame.right, frame.top));
+	shape.LineTo(BPoint(frame.left, frame.top));
+	shape.LineTo(BPoint(frame.right, frame.bottom));
+	view->ClipToShape(&shape);
+	
+	view->FillRect(frame);
+}
+
+
+static void testClipToInverseShape(BView* view, BRect frame)
+{
+	frame.InsetBy(2, 2);
+	BShape shape;
+	shape.MoveTo(BPoint(frame.left, frame.bottom));
+	shape.LineTo(BPoint(frame.right, frame.top));
+	shape.LineTo(BPoint(frame.left, frame.top));
+	shape.LineTo(BPoint(frame.right, frame.bottom));
+	view->ClipToInverseShape(&shape);
+	
+	view->FillRect(frame);
+}
 
 
 // TODO
@@ -1022,7 +1102,7 @@ TestCase gTestCases[] = {
 	{ "Test Draw String", testDrawString },
 	{ "Test Draw String With Length", testDrawStringWithLength },
 	{ "Test Draw String With Offsets", testDrawStringWithOffsets },
-
+	{ "Test Draw String Without Position", testDrawStringWithoutPosition },
 	{ "Test FillArc", testFillArc },
 	{ "Test StrokeArc", testStrokeArc },
 	// testFillBezier fails under BeOS because the
@@ -1078,6 +1158,10 @@ TestCase gTestCases[] = {
 	{ "Test ConstrainClippingRegion", testConstrainClippingRegion }, 
 	{ "Test ClipToPicture", testClipToPicture },
 	{ "Test ClipToInversePicture", testClipToInversePicture },
+	{ "Test ClipToRect", testClipToRect },
+	{ "Test ClipToInverseRect", testClipToInverseRect },
+	{ "Test ClipToShape", testClipToShape },
+	{ "Test ClipToInverseShape", testClipToInverseShape },
 	{ "Test SetPenSize", testSetPenSize },
 	{ "Test SetPenSize2", testSetPenSize2 },
 	{ "Test Pattern", testPattern },

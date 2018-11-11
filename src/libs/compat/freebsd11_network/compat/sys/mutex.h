@@ -39,6 +39,7 @@ extern struct mtx Giant;
 
 
 void mtx_init(struct mtx*, const char*, const char*, int);
+void mtx_sysinit(void *arg);
 void mtx_destroy(struct mtx*);
 
 
@@ -50,6 +51,23 @@ mtx_lock(struct mtx* mutex)
 		mutex->u.mutex.owner = find_thread(NULL);
 	} else if (mutex->type == MTX_RECURSE)
 		recursive_lock_lock(&mutex->u.recursive);
+}
+
+
+static inline int
+mtx_trylock(struct mtx* mutex)
+{
+	if (mutex->type == MTX_DEF) {
+		if (mutex_trylock(&mutex->u.mutex.lock) != B_OK)
+			return 0;
+		mutex->u.mutex.owner = find_thread(NULL);
+		return 1;
+	} else if (mutex->type == MTX_RECURSE) {
+		if (recursive_lock_trylock(&mutex->u.recursive) != B_OK)
+			return 0;
+		return 1;
+	}
+	return 0;
 }
 
 
@@ -87,6 +105,24 @@ mtx_owned(struct mtx* mutex)
 
 	return 0;
 }
+
+
+struct mtx_args {
+	void		*ma_mtx;
+	const char 	*ma_desc;
+	int		 ma_opts;
+};
+
+#define	MTX_SYSINIT(name, mtx, desc, opts)				\
+	static struct mtx_args name##_args = {				\
+		(mtx),							\
+		(desc),							\
+		(opts)							\
+	};								\
+	SYSINIT(name##_mtx_sysinit, SI_SUB_LOCK, SI_ORDER_MIDDLE,	\
+	    mtx_sysinit, &name##_args);					\
+	SYSUNINIT(name##_mtx_sysuninit, SI_SUB_LOCK, SI_ORDER_MIDDLE,	\
+	    mtx_destroy, __DEVOLATILE(void *, &(mtx)->mtx_lock))
 
 
 #endif	/* _FBSD_COMPAT_SYS_MUTEX_H_ */

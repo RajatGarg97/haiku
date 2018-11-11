@@ -26,6 +26,9 @@ public:
 			const PackageNodeList& Children() const
 									{ return fChildren; }
 
+			bool				HasPrecedenceOver(const PackageDirectory* other)
+									const;
+
 private:
 			PackageNodeList		fChildren;
 };

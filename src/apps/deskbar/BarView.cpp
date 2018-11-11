@@ -395,7 +395,7 @@ TBarView::PlaceDeskbarMenu()
 	BRect menuFrame(Bounds());
 	if (fVertical) {
 		width = static_cast<TBarApp*>(be_app)->Settings()->width;
-		height = kMenuBarHeight;
+		height = 4 + fReplicantTray->MaxReplicantHeight();
 		menuFrame.bottom = menuFrame.top + height;
 	} else {
 		width = gMinimumWindowWidth;
@@ -733,15 +733,18 @@ TBarView::_ChangeState(BMessage* message)
 			// Send a message to the preferences window to let it know to
 			// enable or disable preference items.
 
-		if (vertSwap && fExpandoMenuBar != NULL) {
-			if (fVertical) {
-				fInlineScrollView->SetOrientation(B_VERTICAL);
-				fExpandoMenuBar->SetMenuLayout(B_ITEMS_IN_COLUMN);
-				fExpandoMenuBar->StartMonitoringWindows();
-			} else {
-				fInlineScrollView->SetOrientation(B_HORIZONTAL);
-				fExpandoMenuBar->SetMenuLayout(B_ITEMS_IN_ROW);
-				fExpandoMenuBar->StopMonitoringWindows();
+		if (vertSwap) {
+			fReplicantTray->fTime->SetOrientation(fVertical);
+			if (fExpandoMenuBar != NULL) {
+				if (fVertical) {
+					fInlineScrollView->SetOrientation(B_VERTICAL);
+					fExpandoMenuBar->SetMenuLayout(B_ITEMS_IN_COLUMN);
+					fExpandoMenuBar->StartMonitoringWindows();
+				} else {
+					fInlineScrollView->SetOrientation(B_HORIZONTAL);
+					fExpandoMenuBar->SetMenuLayout(B_ITEMS_IN_ROW);
+					fExpandoMenuBar->StopMonitoringWindows();
+				}
 			}
 		}
 	}
@@ -1113,6 +1116,14 @@ int32
 TBarView::CountItems(DeskbarShelf)
 {
 	return fReplicantTray->ReplicantCount();
+}
+
+
+BSize
+TBarView::MaxItemSize(DeskbarShelf shelf)
+{
+	return BSize(fReplicantTray->MaxReplicantWidth(),
+		fReplicantTray->MaxReplicantHeight());
 }
 
 

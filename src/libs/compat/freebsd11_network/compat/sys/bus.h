@@ -69,7 +69,6 @@ struct resource_spec {
 
 enum intr_type {
 	INTR_TYPE_NET	= 4,
-	INTR_FAST		= 128,
 	INTR_MPSAFE		= 512,
 };
 
@@ -85,6 +84,7 @@ typedef void driver_intr_t(void *);
 
 int resource_int_value(const char *name, int unit, const char *resname,
 	int *result);
+int resource_disabled(const char *name, int unit);
 
 struct resource *bus_alloc_resource(device_t dev, int type, int *rid,
 	unsigned long start, unsigned long end, unsigned long count, uint32 flags);
@@ -103,12 +103,21 @@ bus_alloc_resource_any(device_t dev, int type, int *rid, uint32 flags)
 	return bus_alloc_resource(dev, type, rid, 0, ~0, 1, flags);
 }
 
+static inline struct resource *
+bus_alloc_resource_anywhere(device_t dev, int type, int *rid,
+    unsigned long count, uint32 flags)
+{
+	return (bus_alloc_resource(dev, type, rid, 0, ~0, count, flags));
+}
+
 bus_dma_tag_t bus_get_dma_tag(device_t dev);
 
 int bus_setup_intr(device_t dev, struct resource *r, int flags,
 	driver_filter_t filter, driver_intr_t handler, void *arg, void **_cookie);
 int bus_teardown_intr(device_t dev, struct resource *r, void *cookie);
 int bus_bind_intr(device_t dev, struct resource *r, int cpu);
+int bus_describe_intr(device_t dev, struct resource *irq, void *cookie,
+	const char* fmt, ...);
 
 const char *device_get_name(device_t dev);
 const char *device_get_nameunit(device_t dev);

@@ -13,8 +13,6 @@ SubDirC++Flags -fno-rtti ;
 BootMergeObject boot_platform_u-boot_arm.o :
 	# must come first to have _start_* at correct locations
 	shell.S
-
-	arch_mailbox.cpp
 ;
 
 #SEARCH on [ FGristFiles arch_cpu_asm.S ]

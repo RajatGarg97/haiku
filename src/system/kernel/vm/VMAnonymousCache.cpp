@@ -56,6 +56,7 @@
 #include <vm/VMAddressSpace.h>
 
 #include "IORequest.h"
+#include "VMUtils.h"
 
 
 #if	ENABLE_SWAP_SUPPORT
@@ -1238,41 +1239,8 @@ public:
 
 private:
 	int32		fBestScore;
-	VolumeInfo	fVolumeInfo;
+	VolumeInfo&	fVolumeInfo;
 };
-
-
-status_t
-get_mount_point(KPartition* partition, KPath* mountPoint)
-{
-	if (!mountPoint || !partition->ContainsFileSystem())
-		return B_BAD_VALUE;
-
-	const char* volumeName = partition->ContentName();
-	if (!volumeName || strlen(volumeName) == 0)
-		volumeName = partition->Name();
-	if (!volumeName || strlen(volumeName) == 0)
-		volumeName = "unnamed volume";
-
-	char basePath[B_PATH_NAME_LENGTH];
-	int32 len = snprintf(basePath, sizeof(basePath), "/%s", volumeName);
-	for (int32 i = 1; i < len; i++)
-		if (basePath[i] == '/')
-		basePath[i] = '-';
-	char* path = mountPoint->LockBuffer();
-	int32 pathLen = mountPoint->BufferSize();
-	strncpy(path, basePath, pathLen);
-
-	struct stat dummy;
-	for (int i = 1; ; i++) {
-		if (stat(path, &dummy) != 0)
-			break;
-		snprintf(path, pathLen, "%s%d", basePath, i);
-	}
-
-	mountPoint->UnlockBuffer();
-	return B_OK;
-}
 
 
 status_t

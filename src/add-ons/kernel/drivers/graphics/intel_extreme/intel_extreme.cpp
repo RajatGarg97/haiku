@@ -1,10 +1,11 @@
 /*
- * Copyright 2006-2014, Haiku, Inc. All Rights Reserved.
+ * Copyright 2006-2018, Haiku, Inc. All Rights Reserved.
  * Distributed under the terms of the MIT License.
  *
  * Authors:
  *		Axel Dörfler, axeld@pinc-software.de
  *		Alexander von Gluck IV, kallisti5@unixzen.com
+ *		Adrien Destugues, pulkomandy@pulkomandy.tk
  */
 
 
@@ -39,13 +40,17 @@
 
 
 static void
-init_overlay_registers(overlay_registers* registers)
+init_overlay_registers(overlay_registers* _registers)
 {
-	memset(registers, 0, B_PAGE_SIZE);
+	user_memset(_registers, 0, B_PAGE_SIZE);
 
-	registers->contrast_correction = 0x48;
-	registers->saturation_cos_correction = 0x9a;
+	overlay_registers registers;
+	memset(&registers, 0, sizeof(registers));
+	registers.contrast_correction = 0x48;
+	registers.saturation_cos_correction = 0x9a;
 		// this by-passes contrast and saturation correction
+
+	user_memcpy(_registers, &registers, sizeof(overlay_registers));
 }
 
 
@@ -212,8 +217,8 @@ init_interrupt_handler(intel_info &info)
 
 	// Find the right interrupt vector, using MSIs if available.
 	info.irq = 0xff;
-	info.use_msi = false;	
-	if (info.pci->u.h0.interrupt_pin != 0x00)	
+	info.use_msi = false;
+	if (info.pci->u.h0.interrupt_pin != 0x00)
 		info.irq = info.pci->u.h0.interrupt_line;
 	if (gPCIx86Module != NULL && gPCIx86Module->get_msi_count(info.pci->bus,
 			info.pci->device, info.pci->function) >= 1) {
@@ -308,7 +313,8 @@ intel_extreme_init(intel_info &info)
 	info.aperture = gGART->map_aperture(info.pci->bus, info.pci->device,
 		info.pci->function, 0, &info.aperture_base);
 	if (info.aperture < B_OK) {
-		ERROR("error: could not map GART aperture! (%s)\n", strerror(info.aperture));
+		ERROR("error: could not map GART aperture! (%s)\n",
+			strerror(info.aperture));
 		return info.aperture;
 	}
 
@@ -316,7 +322,8 @@ intel_extreme_init(intel_info &info)
 	info.shared_area = sharedCreator.Create("intel extreme shared info",
 		(void**)&info.shared_info, B_ANY_KERNEL_ADDRESS,
 		ROUND_TO_PAGE_SIZE(sizeof(intel_shared_info)) + 3 * B_PAGE_SIZE,
-		B_FULL_LOCK, 0);
+		B_FULL_LOCK,
+		B_KERNEL_READ_AREA | B_KERNEL_WRITE_AREA | B_USER_CLONEABLE_AREA);
 	if (info.shared_area < B_OK) {
 		ERROR("error: could not create shared area!\n");
 		gGART->unmap_aperture(info.aperture);
@@ -325,13 +332,11 @@ intel_extreme_init(intel_info &info)
 
 	memset((void*)info.shared_info, 0, sizeof(intel_shared_info));
 
-	int fbIndex = 0;
 	int mmioIndex = 1;
 	if (info.device_type.Generation() >= 3) {
 		// For some reason Intel saw the need to change the order of the
 		// mappings with the introduction of the i9xx family
 		mmioIndex = 0;
-		fbIndex = 2;
 	}
 
 	// evaluate driver settings, if any
@@ -348,7 +353,8 @@ intel_extreme_init(intel_info &info)
 	info.registers_area = mmioMapper.Map("intel extreme mmio",
 		info.pci->u.h0.base_registers[mmioIndex],
 		info.pci->u.h0.base_register_sizes[mmioIndex],
-		B_ANY_KERNEL_ADDRESS, B_KERNEL_READ_AREA | B_KERNEL_WRITE_AREA,
+		B_ANY_KERNEL_ADDRESS,
+		B_KERNEL_READ_AREA | B_KERNEL_WRITE_AREA | B_USER_CLONEABLE_AREA,
 		(void**)&info.registers);
 	if (mmioMapper.InitCheck() < B_OK) {
 		ERROR("error: could not map memory I/O!\n");
@@ -454,14 +460,18 @@ intel_extreme_init(intel_info &info)
 	if (info.device_type.InFamily(INTEL_FAMILY_8xx))
 		info.shared_info->single_head_locked = 1;
 
-	if (info.device_type.InFamily(INTEL_FAMILY_9xx)
-		| info.device_type.InFamily(INTEL_FAMILY_SER5)) {
-		info.shared_info->pll_info.reference_frequency = 96000;	// 96 kHz
+	if (info.device_type.InFamily(INTEL_FAMILY_SER5)) {
+		info.shared_info->pll_info.reference_frequency = 120000;	// 120 MHz
+		info.shared_info->pll_info.max_frequency = 350000;
+			// 350 MHz RAM DAC speed
+		info.shared_info->pll_info.min_frequency = 20000;		// 20 MHz
+	} else if (info.device_type.InFamily(INTEL_FAMILY_9xx)) {
+		info.shared_info->pll_info.reference_frequency = 96000;	// 96 MHz
 		info.shared_info->pll_info.max_frequency = 400000;
 			// 400 MHz RAM DAC speed
 		info.shared_info->pll_info.min_frequency = 20000;		// 20 MHz
 	} else {
-		info.shared_info->pll_info.reference_frequency = 48000;	// 48 kHz
+		info.shared_info->pll_info.reference_frequency = 48000;	// 48 MHz
 		info.shared_info->pll_info.max_frequency = 350000;
 			// 350 MHz RAM DAC speed
 		info.shared_info->pll_info.min_frequency = 25000;		// 25 MHz
@@ -484,7 +494,7 @@ intel_extreme_init(intel_info &info)
 	status_t status = intel_allocate_memory(info, B_PAGE_SIZE, 0,
 		intel_uses_physical_overlay(*info.shared_info)
 				? B_APERTURE_NEED_PHYSICAL : 0,
-		(addr_t*)&info.overlay_registers, 
+		(addr_t*)&info.overlay_registers,
 		&info.shared_info->physical_overlay_registers);
 	if (status == B_OK) {
 		info.shared_info->overlay_offset = (addr_t)info.overlay_registers

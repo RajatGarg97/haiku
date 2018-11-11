@@ -1,16 +1,20 @@
 #
 # Administrative startup for /bin/sh
-# Place user customizations in /.profile
+# Place user customizations in ~/config/settings/profile
 #
 
-ps 2>&1 | grep -e $PPID 2>&1 | grep -e $SHELL 2>&1 | grep -q -e $PPID > /dev/null 2>&1
-if [ $? -eq 1 ] ; then
+_ARCH=`getarch 2>/dev/null`
+if [ "$_ARCH" = "`getarch -p 2>/dev/null`" ] ; then
 	echo -e "\nWelcome to the Haiku shell.\n"
-	export PS1="\w> "
+	PS1="\w"
 else
 	echo -e "\nSwitching to architecture `getarch`\n"
-	export PS1="[`getarch`] \w> "
+	PS1="[$_ARCH] \w"
 fi
+unset _ARCH
+
+export PS1="\["'`if [ $? = 0 ]; then echo "\e[32m";
+	else echo "\e[31m"; fi`'"\]$PS1\[\e[0m\]> "
 
 export USER=`id -un`
 export GROUP=`id -gn`
@@ -21,14 +25,6 @@ fi
 
 export HISTFILESIZE=500
 export HISTCONTROL=ignoredups
-
-# Locale
-export LC_MESSAGES=`locale --message`
-export LC_NUMERIC=`locale --format`
-export LC_TIME=`locale --time`
-export LC_COLLATE=$LC_MESSAGES
-export LC_CTYPE=$LC_MESSAGES
-export LC_MONETARY=$LC_NUMERIC
 
 alias ls="ls --color=auto"
 alias ll="ls -lA"

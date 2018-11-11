@@ -15,10 +15,10 @@
 #include <Locale.h>
 #include <MediaFile.h>
 #include <MediaTrack.h>
-#include <MessageFormat.h>
 #include <Mime.h>
 #include <Path.h>
 #include <String.h>
+#include <StringFormat.h>
 #include <View.h>
 
 #include "MediaConverterWindow.h"
@@ -131,7 +131,7 @@ MediaConverterApp::RefsReceived(BMessage* msg)
 
 	if (errors) {
 		BString alertText;
-		static BMessageFormat format(B_TRANSLATE("{0, plural, "
+		static BStringFormat format(B_TRANSLATE("{0, plural, "
 			"one{The file was not recognized as a supported media file:} "
 			"other{# files were not recognized as supported media files:}}"));
 		format.Format(alertText, errors);
@@ -327,8 +327,6 @@ MediaConverterApp::_RunConvert()
 					}
 					fWin->Unlock();
 				}
-
-
 			} else {
 				srcIndex++;
 				BString error(
@@ -383,11 +381,11 @@ MediaConverterApp::_ConvertFile(BMediaFile* inFile, BMediaFile* outFile,
 	int32 tracks = inFile->CountTracks();
 	for (int32 i = 0; i < tracks && (!outAudTrack || !outVidTrack); i++) {
 		BMediaTrack* inTrack = inFile->TrackAt(i);
-		memset(&inFormat, 0, sizeof(media_format));
+		inFormat.Clear();
 		inTrack->EncodedFormat(&inFormat);
 		if (inFormat.IsAudio() && (audioCodec != NULL)) {
 			inAudTrack = inTrack;
-			memset(&outAudFormat, 0, sizeof(media_format));
+			outAudFormat.Clear();
 			outAudFormat.type = B_MEDIA_RAW_AUDIO;
 			raf = &(outAudFormat.u.raw_audio);
 			inTrack->DecodedFormat(&outAudFormat);
@@ -409,8 +407,7 @@ MediaConverterApp::_ConvertFile(BMediaFile* inFile, BMediaFile* outFile,
 					fWin->Unlock();
 				}
 			} else {
-				fWin->SetStatusMessage(
-					B_TRANSLATE("Error creating track."));
+				SetStatusMessage(B_TRANSLATE("Error creating track."));
 			}
 
 		} else if (inFormat.IsVideo() && (videoCodec != NULL)) {
@@ -419,7 +416,7 @@ MediaConverterApp::_ConvertFile(BMediaFile* inFile, BMediaFile* outFile,
 			height = (int32)inFormat.Height();
 
 			// construct desired decoded video format
-			memset(&outVidFormat, 0, sizeof(outVidFormat));
+			outVidFormat.Clear();
 			outVidFormat.type = B_MEDIA_RAW_VIDEO;
 			rvf = &(outVidFormat.u.raw_video);
 			rvf->last_active = (uint32)(height - 1);
@@ -486,12 +483,11 @@ MediaConverterApp::_ConvertFile(BMediaFile* inFile, BMediaFile* outFile,
 					fWin->Unlock();
 				}
 			} else {
-				fWin->SetStatusMessage(
-					B_TRANSLATE("Error creating video."));
+				SetStatusMessage(B_TRANSLATE("Error creating video."));
 			}
 		} else {
 			//  didn't do anything with the track
-			fWin->SetStatusMessage(
+			SetStatusMessage(
 				B_TRANSLATE("Input file not recognized as Audio or Video"));
 			inFile->ReleaseTrack(inTrack);
 		}

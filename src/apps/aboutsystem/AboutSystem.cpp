@@ -1,5 +1,5 @@
 /*
- * Copyright 2005-2014, Haiku, Inc.
+ * Copyright 2005-2018, Haiku, Inc.
  * Distributed under the terms of the MIT license.
  *
  * Authors:
@@ -29,7 +29,6 @@
 #include <Font.h>
 #include <fs_attr.h>
 #include <LayoutBuilder.h>
-#include <MessageFormat.h>
 #include <MessageRunner.h>
 #include <Messenger.h>
 #include <ObjectList.h>
@@ -40,6 +39,7 @@
 #include <Screen.h>
 #include <ScrollView.h>
 #include <String.h>
+#include <StringFormat.h>
 #include <StringList.h>
 #include <StringView.h>
 #include <TranslationUtils.h>
@@ -99,7 +99,9 @@ static const char* kGPLv2 = B_TRANSLATE_MARK("GNU GPL v2");
 static const char* kGPLv3 = B_TRANSLATE_MARK("GNU GPL v3");
 static const char* kLGPLv2 = B_TRANSLATE_MARK("GNU LGPL v2");
 static const char* kLGPLv21 = B_TRANSLATE_MARK("GNU LGPL v2.1");
+#if 0
 static const char* kPublicDomain = B_TRANSLATE_MARK("Public Domain");
+#endif
 #ifdef __INTEL__
 static const char* kIntel2xxxFirmware = B_TRANSLATE_MARK("Intel (2xxx firmware)");
 static const char* kIntelFirmware = B_TRANSLATE_MARK("Intel (firmware)");
@@ -469,7 +471,7 @@ AboutView::AboutView()
 		B_ALIGN_VERTICAL_UNSET));
 
 	// CPU count, type and clock speed
-	static BMessageFormat format(B_TRANSLATE_COMMENT(
+	static BStringFormat format(B_TRANSLATE_COMMENT(
 		"{0, plural, one{Processor:} other{# Processors:}}",
 		"\"Processor:\" or \"2 Processors:\""));
 
@@ -1238,22 +1240,15 @@ AboutView::_CreateCreditsView()
 		.SetLicense(kBSDThreeClause)
 		.SetURL("http://www.openexr.com"));
 
-	// Netcat copyrights
-	_AddPackageCredit(PackageCredit("Netcat")
-		.SetCopyright(COPYRIGHT_STRING "1996 Hobbit.")
-		.SetLicense(kPublicDomain)
-		.SetURL("http://nc110.sourceforge.net/"));
-
 	// acpica copyrights
-	_AddPackageCredit(PackageCredit("acpica")
-		.SetCopyright(COPYRIGHT_STRING "1999-2014 Intel Corp.")
+	_AddPackageCredit(PackageCredit("ACPI Component Architecture (ACPICA)")
+		.SetCopyright(COPYRIGHT_STRING "1999-2018 Intel Corp.")
 		.SetLicense("Intel (ACPICA)")
 		.SetURL("https://www.acpica.org"));
 
 	// libpng copyrights
 	_AddPackageCredit(PackageCredit("libpng")
-		.SetCopyright(COPYRIGHT_STRING "2004, 2006-2008 Glenn "
-			"Randers-Pehrson.")
+		.SetCopyright(COPYRIGHT_STRING "1995-2017 libpng authors")
 		.SetLicense("LibPNG")
 		.SetURL("http://www.libpng.org"));
 
@@ -1291,12 +1286,6 @@ AboutView::_CreateCreditsView()
 			"All rights reserved."), NULL)
 		.SetLicense(kBSDThreeClause)
 		.SetURL("http://www.xiph.org"));
-
-	// The Tcpdump Group
-	_AddPackageCredit(PackageCredit("The Tcpdump Group")
-		.SetCopyright("tcpdump, libpcap")
-		.SetLicense(kBSDThreeClause)
-		.SetURL("http://www.tcpdump.org"));
 
 	// Matroska
 	_AddPackageCredit(PackageCredit("libmatroska")
@@ -1341,33 +1330,17 @@ AboutView::_CreateCreditsView()
 		.SetLicense(kBSDTwoClause)
 		.SetURL("http://udis86.sourceforge.net"));
 
-	// Intel PRO/Wireless 2100 Firmware
-	_AddPackageCredit(PackageCredit("Intel PRO/Wireless 2100 Firmware")
+	// Intel PRO/Wireless 2100 & 2200BG firmwares
+	_AddPackageCredit(PackageCredit("Intel PRO/Wireless 2100 & 2200BG firmwares")
 		.SetCopyright(B_TRANSLATE(COPYRIGHT_STRING "2003-2006 "
 			"Intel Corporation. All rights reserved."))
 		.SetLicense(kIntel2xxxFirmware)
-		.SetURL("http://ipw2100.sourceforge.net/"));
-
-	// Intel PRO/Wireless 2200BG Firmware
-	_AddPackageCredit(PackageCredit("Intel PRO/Wireless 2200BG Firmware")
-		.SetCopyright(B_TRANSLATE(COPYRIGHT_STRING "2004-2005 "
-			"Intel Corporation. All rights reserved."))
-		.SetLicense(kIntel2xxxFirmware)
-		.SetURL("http://ipw2200.sourceforge.net/"));
-
-	// Intel PRO/Wireless 3945ABG/BG Network Connection Adapter Firmware
-	_AddPackageCredit(
-		PackageCredit(
-			"Intel PRO/Wireless 3945ABG/BG Network Connection Adapter Firmware")
-		.SetCopyright(B_TRANSLATE(COPYRIGHT_STRING "2006-2007 "
-			"Intel Corporation. All rights reserved."))
-		.SetLicense(kIntelFirmware)
 		.SetURL("http://www.intellinuxwireless.org/"));
 
-	// Intel Wireless WiFi Link 4965AGN Adapter Firmware
+	// Intel wireless firmwares
 	_AddPackageCredit(
-		PackageCredit("Intel Wireless WiFi Link 4965AGN Adapter Firmware")
-		.SetCopyright(B_TRANSLATE(COPYRIGHT_STRING "2006-2007 "
+		PackageCredit("Intel PRO/Wireless network adapter firmwares")
+		.SetCopyright(B_TRANSLATE(COPYRIGHT_STRING "2006-2015 "
 			"Intel Corporation. All rights reserved."))
 		.SetLicense(kIntelFirmware)
 		.SetURL("http://www.intellinuxwireless.org/"));
@@ -1608,7 +1581,7 @@ MemSizeToString(char string[], size_t size, system_info* info)
 
 		snprintf(string, size, "%d", inaccessibleMemory);
 		message.ReplaceFirst("%inaccessible", string);
-		strncpy(string, message.String(), size);
+		strlcpy(string, message.String(), size);
 	} else {
 		snprintf(string, size, B_TRANSLATE("%d MiB total"),
 			int(info->max_pages * (B_PAGE_SIZE / 1048576.0f) + 0.5f));

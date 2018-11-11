@@ -108,10 +108,10 @@ UnpackingDirectory::AddPackageNode(PackageNode* packageNode, dev_t deviceID)
 		= dynamic_cast<PackageDirectory*>(packageNode);
 
 	PackageDirectory* other = fPackageDirectories.Head();
-	bool isNewest = other == NULL
-		|| packageDirectory->ModifiedTime() > other->ModifiedTime();
+	bool overridesHead = other == NULL
+		|| packageDirectory->HasPrecedenceOver(other);
 
-	if (isNewest) {
+	if (overridesHead) {
 		fPackageDirectories.Insert(other, packageDirectory);
 		NodeReinitVFS(deviceID, fID, packageDirectory, other, fFlags);
 	} else
@@ -135,7 +135,7 @@ UnpackingDirectory::RemovePackageNode(PackageNode* packageNode, dev_t deviceID)
 		it.Next();
 			// skip the first one
 		while (PackageDirectory* otherNode = it.Next()) {
-			if (otherNode->ModifiedTime() > newestNode->ModifiedTime())
+			if (otherNode->HasPrecedenceOver(newestNode))
 				newestNode = otherNode;
 		}
 
@@ -170,8 +170,7 @@ UnpackingDirectory::WillBeFirstPackageNode(PackageNode* packageNode) const
 		return false;
 
 	PackageDirectory* other = fPackageDirectories.Head();
-	return other == NULL
-		|| packageDirectory->ModifiedTime() > other->ModifiedTime();
+	return other == NULL || packageDirectory->HasPrecedenceOver(other);
 }
 
 

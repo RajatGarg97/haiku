@@ -46,9 +46,6 @@ extern "C" {
 #endif
 
 
-#define ROUNDUP(a, b) (((a) + ((b)-1)) & ~((b)-1))
-
-
 struct internal_intr {
 	device_t		dev;
 	driver_filter_t	filter;
@@ -85,7 +82,7 @@ map_mem(void **virtualAddr, phys_addr_t _phy, size_t size, uint32 protection,
 	phys_addr_t physicalAddr = _phy - offset;
 	area_id area;
 
-	size = ROUNDUP(size + offset, B_PAGE_SIZE);
+	size = roundup(size + offset, B_PAGE_SIZE);
 	area = map_physical_memory(name, physicalAddr, size, B_ANY_KERNEL_ADDRESS,
 		protection, virtualAddr);
 	if (area < B_OK)
@@ -115,8 +112,13 @@ bus_alloc_irq_resource(device_t dev, struct resource *res)
 static int
 bus_alloc_mem_resource(device_t dev, struct resource *res, int regid)
 {
-	uint32 addr = pci_read_config(dev, regid, 4) & PCI_address_memory_32_mask;
-	uint32 size = 128 * 1024; /* XXX */
+	/* TODO: check the offset really is of a BAR */
+	uint32 bar = pci_read_config(dev, regid, 4);
+	uint32 addr = bar & PCI_address_memory_32_mask;
+	pci_write_config(dev, regid, ~0, 4);
+	uint32 size = pci_read_config(dev, regid, 4) & PCI_address_memory_32_mask;
+	size = (~size) + 1;
+	pci_write_config(dev, regid, bar, 4);
 	void *virtualAddr;
 
 	res->r_mapped_area = map_mem(&virtualAddr, addr, size, 0,
@@ -124,7 +126,7 @@ bus_alloc_mem_resource(device_t dev, struct resource *res, int regid)
 	if (res->r_mapped_area < B_OK)
 		return -1;
 
-	res->r_bustag = I386_BUS_SPACE_MEM;
+	res->r_bustag = X86_BUS_SPACE_MEM;
 	res->r_bushandle = (bus_space_handle_t)virtualAddr;
 	return 0;
 }
@@ -133,7 +135,7 @@ bus_alloc_mem_resource(device_t dev, struct resource *res, int regid)
 static int
 bus_alloc_ioport_resource(device_t dev, struct resource *res, int regid)
 {
-	res->r_bustag = I386_BUS_SPACE_IO;
+	res->r_bustag = X86_BUS_SPACE_IO;
 	res->r_bushandle = pci_read_config(dev, regid, 4) & PCI_address_io_mask;
 	return 0;
 }
@@ -260,6 +262,13 @@ rman_get_rid(struct resource *res)
 }
 
 
+void*
+rman_get_virtual(struct resource *res)
+{
+	return NULL;
+}
+
+
 //	#pragma mark - Interrupt handling
 
 
@@ -275,18 +284,6 @@ intr_wrapper(void *data)
 
 	release_sem_etc(intr->sem, 1, B_DO_NOT_RESCHEDULE);
 	return intr->handling ? B_HANDLED_INTERRUPT : B_INVOKE_SCHEDULER;
-}
-
-
-static int32
-intr_fast_wrapper(void *data)
-{
-	struct internal_intr *intr = (struct internal_intr *)data;
-
-	intr->handler(intr->arg);
-
-	// We don't know if the interrupt has been handled.
-	return B_UNHANDLED_INTERRUPT;
 }
 
 
@@ -352,9 +349,6 @@ bus_setup_intr(device_t dev, struct resource *res, int flags,
 	if (filter != NULL) {
 		status = install_io_interrupt_handler(intr->irq,
 			(interrupt_handler)intr->filter, intr->arg, 0);
-	} else if ((flags & INTR_FAST) != 0) {
-		status = install_io_interrupt_handler(intr->irq,
-			intr_fast_wrapper, intr, B_NO_HANDLED_INFO);
 	} else {
 		snprintf(semName, sizeof(semName), "%s intr", dev->device_name);
 
@@ -375,7 +369,7 @@ bus_setup_intr(device_t dev, struct resource *res, int flags,
 		}
 
 		status = install_io_interrupt_handler(intr->irq,
-			intr_wrapper, intr, B_NO_HANDLED_INFO);
+			intr_wrapper, intr, 0);
 	}
 
 	if (status == B_OK && res->r_bustag == 1 && gPCIx86 != NULL) {
@@ -415,6 +409,9 @@ int
 bus_teardown_intr(device_t dev, struct resource *res, void *arg)
 {
 	struct internal_intr *intr = (struct internal_intr *)arg;
+	if (intr == NULL)
+		return -1;
+
 	struct root_device_softc *root = (struct root_device_softc *)dev->root->softc;
 
 	if ((root->is_msi || root->is_msix) && gPCIx86 != NULL) {
@@ -426,8 +423,6 @@ bus_teardown_intr(device_t dev, struct resource *res, void *arg)
 	if (intr->filter != NULL) {
 		remove_io_interrupt_handler(intr->irq, (interrupt_handler)intr->filter,
 			intr->arg);
-	} else if (intr->flags & INTR_FAST) {
-		remove_io_interrupt_handler(intr->irq, intr_fast_wrapper, intr);
 	} else {
 		remove_io_interrupt_handler(intr->irq, intr_wrapper, intr);
 	}
@@ -446,6 +441,18 @@ bus_bind_intr(device_t dev, struct resource *res, int cpu)
 	// TODO
 	return 0;
 }
+
+
+int bus_describe_intr(device_t dev, struct resource *irq, void *cookie,
+	const char* fmt, ...)
+{
+	if (dev->parent == NULL)
+		return EINVAL;
+
+	// we don't really support names for interrupts
+	return 0;
+}
+
 
 //	#pragma mark - bus functions
 

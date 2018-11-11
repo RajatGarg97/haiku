@@ -61,8 +61,8 @@ TerminalBuffer::Init(int32 width, int32 height, int32 historySize)
 	if (fColorsPalette == NULL)
 		return B_NO_MEMORY;
 
-	memcpy(fColorsPalette, TermApp::DefaultPalette(),
-			sizeof(rgb_color) * kTermColorCount);
+	for (uint i = 0; i < kTermColorCount; i++)
+		fColorsPalette[i] = TermApp::DefaultPalette()[i];
 
 	return BasicTerminalBuffer::Init(width, height, historySize);
 }
@@ -231,15 +231,14 @@ TerminalBuffer::SetCursorHidden(bool hidden)
 void
 TerminalBuffer::SetPaletteColor(uint8 index, rgb_color color)
 {
-	if (index < kTermColorCount)
-		fColorsPalette[index] = color;
+	fColorsPalette[index] = color;
 }
 
 
 rgb_color
 TerminalBuffer::PaletteColor(uint8 index)
 {
-	return fColorsPalette[min_c(index, kTermColorCount - 1)];
+	return fColorsPalette[index];
 }
 
 

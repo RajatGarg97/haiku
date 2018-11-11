@@ -1,10 +1,10 @@
-1	spanish; castilian	x-vnd.Haiku-Expander	130018254
+1	spanish; castilian	x-vnd.Haiku-Expander	3300517306
 Expand	ExpanderMenu		Extraer
 Expanding '%s'…	ExpanderWindow		Expandiendo '%s'…
 Close window when done expanding	ExpanderPreferences		Cerrar ventana después de extraer
 Set destination…	ExpanderMenu		Elegir destino...
 Use:	ExpanderPreferences		Uso:
-File expanded	ExpanderWindow		Fichero descomprimido
+File expanded	ExpanderWindow		Archivo descomprimido
 The destination is read only.	ExpanderWindow		El destino es de sólo lectura.
 Expander: Open	ExpanderWindow		Expander: Abrir
  is not supported	ExpanderWindow		 no está soportado
@@ -14,14 +14,14 @@ Source	ExpanderWindow		Origen
 Error when expanding archive	ExpanderWindow		Error extrayendo archivo
 Hide contents	ExpanderWindow		Esconder contenidos
 Cancel	ExpanderWindow		Cancelar
-Automatically expand files	ExpanderPreferences		Automáticamente extraer archivos
+Automatically expand files	ExpanderPreferences		Extraer archivos automáticamente
 Continue	ExpanderWindow		Continuar
 Destination folder	ExpanderPreferences		Carpeta de destino
 Other	ExpanderPreferences		Otro
 Cancel	ExpanderPreferences		Cancelar
 Expansion	ExpanderPreferences		Expansión
-Are you sure you want to stop expanding this\narchive? The expanded items may not be complete.	ExpanderWindow		¿Está seguro de querer parar de descomprimir este \narchivo? El elemento descomprimiéndose puede no estar completo.
 Select	DirectoryFilePanel		Seleccionar
+The folder was either moved, renamed or not supported.	ExpanderWindow		La carpeta ha sido movida, renombrada o no es soportada.
 Destination folder doesn't exist. Would you like to create it?	ExpanderWindow		La carpeta de destino no existe. ¿Desea crearla?
 Same directory as source (archive) file	ExpanderPreferences		Mismo directorio que el archivo fuente
 Settings	ExpanderMenu		Configuración
@@ -29,13 +29,13 @@ Settings…	ExpanderMenu		Configuración...
 Expander: Choose destination	DirectoryFilePanel		Expander: Elegir destino
 Select	ExpanderPreferences		Seleccionar
 Show contents	ExpanderWindow		Mostrar contenidos
-Automatically show contents listing	ExpanderPreferences		Automáticamente mostrar el listado de contenido
+Automatically show contents listing	ExpanderPreferences		Mostrar automáticamente el listado de contenido
 OK	ExpanderPreferences		Aceptar
-Leave destination folder path empty	ExpanderPreferences		Dejar la ruta de la carpeta de destino vacia
+Are you sure you want to stop expanding this archive? The expanded items may not be complete.	ExpanderWindow		¿Está seguro que desea detener la extracción de este archivo? Los ítems extraídos pueden no estar completos.
+Leave destination folder path empty	ExpanderPreferences		Dejar la ruta de la carpeta de destino vacía
 Failed to create the destination folder.	ExpanderWindow		Fallo al crear la carpeta destino.
 Select '%s'…	DirectoryFilePanel		Seleccionar '%s'…
 Create	ExpanderWindow		Crear
-The folder was either moved, renamed or not\nsupported.	ExpanderWindow		La carpeta o bien fue movida, o renombrada o\n no está soportada.
 The file doesn't exist	ExpanderWindow		El archivo no existe
 Stop	ExpanderMenu		Parar
 File	ExpanderMenu		Archivo

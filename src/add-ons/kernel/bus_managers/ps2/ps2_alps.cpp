@@ -79,7 +79,7 @@ static int32
 generate_event(timer* timer)
 {
 	gEventProducer.InjectEvent();
-	return 0;
+	return B_HANDLED_INTERRUPT;
 }
 
 
@@ -538,7 +538,7 @@ alps_ioctl(void *_cookie, uint32 op, void *buffer, size_t length)
 				sizeof(bigtime_t));
 
 		default:
-			TRACE("ALPS: unknown opcode: %ld\n", op);
+			TRACE("ALPS: unknown opcode: %" B_PRIu32 "\n", op);
 			return B_BAD_VALUE;
 	}
 }

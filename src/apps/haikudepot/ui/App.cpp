@@ -108,6 +108,18 @@ App::MessageReceived(BMessage* message)
 			ServerHelper::AlertClientTooOld(message);
 			break;
 
+		case MSG_NETWORK_TRANSPORT_ERROR:
+			ServerHelper::AlertTransportError(message);
+			break;
+
+		case MSG_SERVER_ERROR:
+			ServerHelper::AlertServerJsonRpcError(message);
+			break;
+
+		case MSG_SERVER_DATA_CHANGED:
+			fMainWindow->PostMessage(message);
+			break;
+
 		default:
 			BApplication::MessageReceived(message);
 			break;
@@ -392,7 +404,8 @@ void
 App::_CheckPackageDaemonRuns()
 {
 	while (!be_roster->IsRunning(kPackageDaemonSignature)) {
-		BAlert* alert = new BAlert("start_package_daemon",
+		BAlert* alert = new BAlert(
+			B_TRANSLATE("Start package daemon"),
 			B_TRANSLATE("HaikuDepot needs the package daemon to function, "
 				"and it appears to be not running.\n"
 				"Would you like to start it now?"),
@@ -419,8 +432,8 @@ App::_LaunchPackageDaemon()
 			= B_TRANSLATE("Starting the package daemon failed:\n\n%Error%");
 		errorMessage.ReplaceAll("%Error%", strerror(ret));
 
-		BAlert* alert = new BAlert("package_daemon_problem",
-			errorMessage,
+		BAlert* alert = new BAlert(
+			B_TRANSLATE("Package daemon problem"), errorMessage,
 			B_TRANSLATE("Quit HaikuDepot"),
 			B_TRANSLATE("Try again"), NULL, B_WIDTH_AS_USUAL,
 			B_WARNING_ALERT);

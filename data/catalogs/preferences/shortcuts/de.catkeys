@@ -1,14 +1,13 @@
-1	german	x-vnd.Haiku-Shortcuts	102336796
+1	german	x-vnd.Haiku-Shortcuts	986541402
 OK	ShortcutsWindow		OK
 Shortcuts wasn't able to save your keyset.	ShortcutsWindow		Die Tastenbelegung konnte nicht gespeichert werden.
 Cancel	ShortcutsWindow		Abbrechen
 Append KeySet…	ShortcutsWindow		Tastenbelegung anfügen…
-Control	ShortcutsSpec	Name for modifier on keyboard	Steuerung
+Control	ShortcutsSpec	Name for modifier on keyboard	Strg
 Key	ShortcutsWindow		Taste
 Open KeySet…	ShortcutsWindow		Tastenbelegung öffnen…
 Error, NULL state description?	ShortcutsSpec		Fehler, NULL Status Beschreibung?
 Revert to saved	ShortcutsWindow		Gespeicherten Stand herstellen
-Alt	ShortcutsSpec	Name for modifier on keyboard	Alt
 *InsertString \"Your Text Here\"	ShortcutsWindow		*Zeichen einfügen \"Hier der Text\"
 *MouseUp	ShortcutsWindow		*Maustaste losgelassen
 (Choose application with file requester)	ShortcutsWindow		(Eine Anwendung per Datei-Dialog wählen)
@@ -20,6 +19,7 @@ Save	ShortcutsWindow		Speichern
 *MouseButton 1	ShortcutsWindow		*Maustaste 1 drücken
 *MoveMouse +20 +0	ShortcutsWindow		*Maus 20 Pixel nach rechts bewegen
 Save changes before closing?	ShortcutsWindow		Änderungen vor dem Schließen speichern?
+Command	ShortcutsSpec	Name for modifier on keyboard	Befehl
 Remove selected shortcut	ShortcutsWindow		Markierten Eintrag entfernen
 Add new shortcut	ShortcutsWindow		Neue Tasten-Kombi
 Save & apply	ShortcutsWindow		Speichern & anwenden

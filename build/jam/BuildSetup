@@ -12,7 +12,7 @@
 
 # The Haiku (base) version. For development builds the revision will be
 # attached.
-HAIKU_VERSION = r1~alpha4_pm ;
+HAIKU_VERSION = r1~beta1 ;
 
 
 #pragma mark - container settings
@@ -56,14 +56,13 @@ HAIKU_INSTALL_TARGETS_VAR on $(HAIKU_CD_BOOT_IMAGE_CONTAINER_NAME)
 HAIKU_CONTAINER_SYSTEM_DIR_TOKENS on $(HAIKU_CD_BOOT_IMAGE_CONTAINER_NAME)
 	= system ;
 
-# boot CD for PPC image
-HAIKU_CD_BOOT_PPC_IMAGE_CONTAINER_NAME = haiku-boot-cd-ppc-container ;
-HAIKU_CONTAINER_GRIST on $(HAIKU_CD_BOOT_PPC_IMAGE_CONTAINER_NAME)
-	= CDBootPPCImage ;
+# boot MMC image
+HAIKU_MMC_BOOT_IMAGE_CONTAINER_NAME = haiku-boot-mmc-container ;
+HAIKU_CONTAINER_GRIST on $(HAIKU_MMC_BOOT_IMAGE_CONTAINER_NAME) = MMCImage ;
 # HAIKU_INCLUDE_IN_CONTAINER_VAR -- update only mode not supported
-HAIKU_INSTALL_TARGETS_VAR on $(HAIKU_CD_BOOT_PPC_IMAGE_CONTAINER_NAME)
-	= HAIKU_CD_BOOT_PPC_IMAGE_INSTALL_TARGETS ;
-HAIKU_CONTAINER_SYSTEM_DIR_TOKENS on $(HAIKU_CD_BOOT_PPC_IMAGE_CONTAINER_NAME)
+HAIKU_INSTALL_TARGETS_VAR on $(HAIKU_MMC_BOOT_IMAGE_CONTAINER_NAME)
+	= HAIKU_MMC_BOOT_IMAGE_INSTALL_TARGETS ;
+HAIKU_CONTAINER_SYSTEM_DIR_TOKENS on $(HAIKU_MMC_BOOT_IMAGE_CONTAINER_NAME)
 	= system ;
 
 # Haiku image/install defaults
@@ -85,7 +84,8 @@ HAIKU_DEFAULT_ANYBOOT_DIR = $(HAIKU_OUTPUT_DIR) ;
 HAIKU_DEFAULT_ANYBOOT_LABEL ?= Haiku ;
 
 # Haiku MMC defaults
-HAIKU_DEFAULT_MMC_IMAGE_NAME = haiku-mmc.image ;
+#HAIKU_DEFAULT_MMC_NAME = haiku-$(TARGET_KERNEL_ARCH).mmc ;
+HAIKU_DEFAULT_MMC_NAME = haiku.mmc ;
 HAIKU_DEFAULT_MMC_DIR = $(HAIKU_OUTPUT_DIR) ;
 HAIKU_DEFAULT_MMC_LABEL ?= Haiku ;
 
@@ -150,16 +150,6 @@ switch $(HAIKU_DISTRO_COMPATIBILITY) {
 			$(HAIKU_DISTRO_COMPATIBILITY) ;
 }
 
-# If the environment variable HAIKU_INCLUDE_PATENTED_CODE is defined, we define
-# an equally named macro to the variable value. Some components use the macro
-# to allow compilation of code known to implemented patented ideas and/or
-# techniques, for example the Freetype bytecode hinter or sub-pixel rendering as
-# well as some problematic media codecs.
-if $(HAIKU_INCLUDE_PATENTED_CODE) {
-	HAIKU_DEFINES
-		+= HAIKU_INCLUDE_PATENTED_CODE=$(HAIKU_INCLUDE_PATENTED_CODE) ;
-}
-
 # network libraries
 HAIKU_NETWORK_LIBS = network ;
 HAIKU_NETAPI_LIB = bnetapi ;
@@ -195,7 +185,7 @@ switch $(HOST_GCC_MACHINE) {
 	case armv7l-*	: HAIKU_HOST_IS_BIG_ENDIAN = 0 ;
 	case armv7hl-*	: HAIKU_HOST_IS_BIG_ENDIAN = 0 ;
 	case armv7b-*	: HAIKU_HOST_IS_BIG_ENDIAN = 1 ;
-	case aarch64-*	: HAIKU_HOST_IS_BIG_ENDIAN = 0 ;
+	case arm64-*	: HAIKU_HOST_IS_BIG_ENDIAN = 0 ;
 	case m68k-*		: HAIKU_HOST_IS_BIG_ENDIAN = 1 ;
 	case *			: Exit "Unsupported gcc host machine:" $(HOST_GCC_MACHINE) ;
 }
@@ -231,8 +221,8 @@ if $(HAIKU_HOST_USE_32BIT) = 1 {
 # save jam's variables for the build platform
 HOST_AR				?= $(AR) ;
 HOST_CC				?= $(CC) ;
-HOST_C++			?= $(C++) ;
-HOST_LINK			?= $(LINK) ;
+HOST_C++			?= $(HOST_CC) ;
+HOST_LINK			?= $(HOST_CC) ;
 HOST_RANLIB			?= $(RANLIB) ;
 HOST_CPPFLAGS		?= $(CPPFLAGS) ;
 HOST_CCFLAGS		?= $(HOST_GCC_BASE_FLAGS) $(CCFLAGS) ;
@@ -320,7 +310,7 @@ if $(HOST_PLATFORM) != cygwin {
 }
 
 if $(HOST_GCC_VERSION[1]) >= 3 {
-	HOST_GCC_BASE_FLAGS += -fno-strict-aliasing -fno-tree-vrp ;
+	HOST_GCC_BASE_FLAGS += -fno-strict-aliasing -fno-delete-null-pointer-checks ;
 }
 
 HOST_KERNEL_CCFLAGS += $(HOST_GCC_BASE_FLAGS) -finline -fno-builtin
@@ -407,7 +397,7 @@ if $(HOST_PLATFORM_BEOS_COMPATIBLE) {
 }
 
 HOST_DEFINES += ARCH_$(HOST_CPU) ;
-HOST_DEFINES += _NO_INLINE_ASM ;
+HOST_DEFINES += _NO_INLINE_ASM __NO_INLINE__ ;
 
 # for builds of tools in the current environment
 HOST_BUILD_COMPATIBILITY_LIB_DIR = [ FDirName $(HOST_OBJECT_BASE_DIR) lib ] ;
@@ -441,7 +431,7 @@ if $(HOST_PLATFORM_BEOS_COMPATIBLE) {
 	HOST_CCFLAGS += $(compatibilityHeader) ;
 	HOST_C++FLAGS += $(compatibilityHeader) ;
 } else {
-	HOST_LINKFLAGS += -lm ;
+	HOST_LINKFLAGS += -lm -ldl ;
 	HOST_LIBSTDC++ = stdc++ ;
 	if $(HOST_PLATFORM) = cygwin {
 		HOST_ADD_BUILD_COMPATIBILITY_LIB_DIR
@@ -488,8 +478,6 @@ if $(HOST_PLATFORM_BEOS_COMPATIBLE) {
 	# build platform we need to make sure, this is also defined.
 	if $(HOST_CPU) = x86 {
 		HOST_DEFINES += __INTEL__ ;
-	} else if $(HOST_CPU) = x86_64 {
-		HOST_DEFINES += __x86_64__ ;
 	} else if $(HOST_CPU) = ppc {
 		HOST_DEFINES += __POWERPC__ ;
 	} else if $(HOST_CPU) = m68k {
@@ -594,10 +582,9 @@ HOST_BE_API_HEADERS =
 	[ FDirName $(HAIKU_TOP) headers build os support ]
 	[ FDirName $(HAIKU_TOP) headers build private ]
 ;
-if ! $(HOST_PLATFORM_HAIKU_COMPATIBLE) {
-	HOST_BE_API_CCFLAGS = -include BeOSBuildCompatibility.h ;
-	HOST_BE_API_C++FLAGS = $(HOST_BE_API_CCFLAGS) ;
-}
+HOST_BE_API_CCFLAGS = -include [ FDirName $(HAIKU_TOP) headers build
+	BeOSBuildCompatibility.h ] ;
+HOST_BE_API_C++FLAGS = $(HOST_BE_API_CCFLAGS) ;
 
 
 #pragma mark - target platform settings
@@ -677,7 +664,7 @@ for var in $(archDependentBuildVars)_$(TARGET_PACKAGING_ARCHS) {
 TARGET_BOOT_LIBGCC		= $(HAIKU_BOOT_LIBGCC_$(TARGET_PACKAGING_ARCH)) ;
 TARGET_BOOT_LIBSUPC++	= $(HAIKU_BOOT_LIBSUPC++_$(TARGET_PACKAGING_ARCH)) ;
 
-TARGET_BOOT_PLATFORM	?= $(HAIKU_BOOT_PLATFORM) ;
+TARGET_KERNEL_PLATFORM	?= $(HAIKU_KERNEL_PLATFORM) ;
 
 local architecture ;
 for architecture in $(TARGET_PACKAGING_ARCHS) {

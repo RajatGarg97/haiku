@@ -68,7 +68,7 @@ typedef struct xhci_device {
 	enum xhci_state state;
 	area_id trb_area;
 	phys_addr_t trb_addr;
-	struct xhci_trb (*trbs); // [XHCI_MAX_ENDPOINTS - 1][XHCI_MAX_TRANSFERS]
+	struct xhci_trb *trbs; // [XHCI_MAX_ENDPOINTS - 1][XHCI_MAX_TRANSFERS]
 
 	area_id input_ctx_area;
 	phys_addr_t input_ctx_addr;
@@ -184,6 +184,7 @@ private:
 			// Operational register functions
 	inline	void				WriteOpReg(uint32 reg, uint32 value);
 	inline	uint32				ReadOpReg(uint32 reg);
+	inline	status_t			WaitOpBits(uint32 reg, uint32 mask, uint32 expected);
 
 			// Capability register functions
 	inline	uint32				ReadCapReg32(uint32 reg);

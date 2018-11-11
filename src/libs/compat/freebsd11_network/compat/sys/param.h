@@ -17,12 +17,12 @@
 
 
 /* The version this compatibility layer is based on */
-#define __FreeBSD_version 800107
+#define __FreeBSD_version 1101000
 
 #define MAXBSIZE	0x10000
 
 #define PAGE_SHIFT	12
-#define PAGE_MASK	(PAGE_SIZE - 1)
+#define PAGE_MASK	(B_PAGE_SIZE - 1)
 
 #define trunc_page(x)	((x) & ~PAGE_MASK)
 
@@ -42,12 +42,24 @@
 
 #define MCLBYTES		(1 << MCLSHIFT)
 
-#define	MJUMPAGESIZE	PAGE_SIZE
+#define	MJUMPAGESIZE	B_PAGE_SIZE
 #define	MJUM9BYTES		(9 * 1024)
 #define	MJUM16BYTES		(16 * 1024)
 
 #define ALIGN_BYTES		(sizeof(unsigned long) - 1)
 #define ALIGN(x)		((((unsigned long)x) + ALIGN_BYTES) & ~ALIGN_BYTES)
+
+#if defined(__x86_64__) || defined(__i386__)
+#define	ALIGNED_POINTER(p, t)	1
+#elif defined(__powerpc__)
+#define	ALIGNED_POINTER(p, t)	((((uintptr_t)(p)) & (sizeof (t) - 1)) == 0)
+#elif defined(__arm__)
+#define	ALIGNED_POINTER(p, t)	((((unsigned)(p)) & (sizeof(t) - 1)) == 0)
+#elif defined(__mips__)
+#define	ALIGNED_POINTER(p, t)	((((unsigned long)(p)) & (sizeof (t) - 1)) == 0)
+#else
+#error Need definition of ALIGNED_POINTER for this arch!
+#endif
 
 /* Macros for counting and rounding. */
 #ifndef howmany
@@ -56,6 +68,8 @@
 #define roundup(x, y)	((((x)+((y)-1))/(y))*(y))  /* to any y */
 #define roundup2(x, y)	(((x) + ((y) - 1)) & (~((y) - 1)))
 #define rounddown(x, y)  (((x) / (y)) * (y))
+#define rounddown2(x, y) ((x)&(~((y)-1)))          /* if y is power of two */
+#define powerof2(x)	((((x)-1)&(x))==0)
 
 #define	PRIMASK	0x0ff
 #define	PCATCH	0x100

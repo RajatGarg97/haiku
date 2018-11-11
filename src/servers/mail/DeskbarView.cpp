@@ -1,5 +1,5 @@
 /*
- * Copyright 2004-2012, Haiku Inc. All Rights Reserved.
+ * Copyright 2004-2018, Haiku Inc. All Rights Reserved.
  * Copyright 2001 Dr. Zoidberg Enterprises. All rights reserved.
  *
  * Distributed under the terms of the MIT License.
@@ -24,7 +24,6 @@
 #include <kernel/fs_info.h>
 #include <kernel/fs_index.h>
 #include <MenuItem.h>
-#include <MessageFormat.h>
 #include <Messenger.h>
 #include <NodeInfo.h>
 #include <NodeMonitor.h>
@@ -36,6 +35,7 @@
 #include <Resources.h>
 #include <Roster.h>
 #include <String.h>
+#include <StringFormat.h>
 #include <SymLink.h>
 #include <VolumeRoster.h>
 #include <Window.h>
@@ -56,39 +56,31 @@
 const char* kTrackerSignature = "application/x-vnd.Be-TRAK";
 
 
-//-----The following #defines get around a bug in get_image_info on ppc---
-#if __INTEL__
-#define text_part text
-#define text_part_size text_size
-#else
-#define text_part data
-#define text_part_size data_size
-#endif
-
-extern "C" _EXPORT BView* instantiate_deskbar_item();
+extern "C" _EXPORT BView* instantiate_deskbar_item(float maxWidth,
+	float maxHeight);
 
 
-status_t our_image(image_info* image)
+static status_t
+our_image(image_info& image)
 {
 	int32 cookie = 0;
-	status_t ret;
-	while ((ret = get_next_image_info(0,&cookie,image)) == B_OK)
-	{
-		if ((char*)our_image >= (char*)image->text_part &&
-			(char*)our_image <= (char*)image->text_part + image->text_part_size)
-			break;
+	while (get_next_image_info(B_CURRENT_TEAM, &cookie, &image) == B_OK) {
+		if ((char *)our_image >= (char *)image.text
+			&& (char *)our_image <= (char *)image.text + image.text_size)
+			return B_OK;
 	}
 
-	return ret;
+	return B_ERROR;
 }
 
-BView* instantiate_deskbar_item(void)
+
+BView*
+instantiate_deskbar_item(float maxWidth, float maxHeight)
 {
-	return new DeskbarView(BRect(0, 0, 15, 15));
+	return new DeskbarView(BRect(0, 0, maxHeight - 1, maxHeight - 1));
 }
 
 
-//-------------------------------------------------------------------------------
 //	#pragma mark -
 
 
@@ -334,7 +326,7 @@ DeskbarView::_InitBitmaps()
 		fBitmaps[i] = NULL;
 
 	image_info info;
-	if (our_image(&info) != B_OK)
+	if (our_image(info) != B_OK)
 		return;
 
 	BFile file(info.name, B_READ_ONLY);
@@ -547,7 +539,7 @@ DeskbarView::_BuildMenu()
 	// The New E-mail query
 
 	if (fNewMessages > 0) {
-		static BMessageFormat format(B_TRANSLATE(
+		static BStringFormat format(B_TRANSLATE(
 			"{0, plural, one{# new message} other{# new messages}}"));
 		BString string;
 		format.Format(string, fNewMessages);

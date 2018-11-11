@@ -1,4 +1,6 @@
-1	german	x-vnd.Haiku-PackageInstaller	252728737
+1	german	x-vnd.Haiku-PackageInstaller	3292779285
+The item named '%s' already exists in the given path.\nReplace the item with the one from this package or skip it?	PackageView		Ein Objekt '%s' existiert bereits im angebenen Pfad.\nSoll es mit dem Objekt aus diesem Paket ersetzt oder übersprungen werden?
+The directory named '%s' already exists in the given path.\nReplace the directory with one from this package or skip it?	PackageView		Ein Ordner '%s' existiert bereits im angebenen Pfad.\nSoll es mit dem Ordner aus diesem Paket ersetzt oder übersprungen werden?
 Install to:	PackageView		Installieren nach:
 OK	PackageView		OK
 Accept	PackageTextViewer		Akzeptieren
@@ -19,7 +21,7 @@ The installation of the package has been aborted.	PackageView		Die Installation 
 Done	PackageInstall		Fertig
 All existing files will be replaced?	PackageView		Alle vorhandenen Dateien werden ersetzt?
 Preparing package	PackageInstall		Paket wird vorbereitet
-No package available.	PackageInfo		Kein Paket verfügbar.
+No package available.	PackageInfo		Kein Paket verfügbar
 none	PackageView		entfällt
 Install %name%	PackageView		Installiere %name%
 Stop	PackageStatus		Stopp
@@ -29,11 +31,8 @@ Installing files and folders	PackageInstall		Dateien und Ordner werden installie
 Package installer	PackageView		PackageInstaller
 Install…	UninstallView		Installieren…
 Skip all	PackageView		Alles überspringen
-The item named '%s' already exits in the given path.\nReplace the item with the one from this package or skip it?	PackageView		Das Objekt '%s' existiert bereits im Zielort.\nSoll es mit dem aus dem Paket ersetzt, oder übersprungen werden?
-The script named '%s' already exits in the given path.\nReplace the script with the one from this package or skip it?	PackageView		Das Skript '%s' existiert bereits im Zielort.\nSoll es mit dem aus dem Paket ersetzt, oder übersprungen werden?
 Running post-installation scripts	PackageInstall		Abschließende Installations-Skripte werden ausgeführt
 Skip	PackageView		Überspringen
-The directory named '%s' already exits in the given path.\nReplace the directory with one from this package or skip it?	PackageView		Der Ordner '%s' existiert bereits im Zielort.\nSoll er mit dem aus dem Paket ersetzt, oder übersprungen werden?
 The package you requested has been successfully installed on your system.	PackageView		Das ausgewählte Paket wurde erfolgreich installiert.
 Error! \"%s\" is not a valid path.\n	Packageinstaller main		Fehler! \"%s\" ist kein gültiger Pfad.\n
 Installation type:	PackageView		Installationstyp:
@@ -45,10 +44,10 @@ Abort	PackageView		Abbrechen
 Replace all	PackageView		Alles ersetzen
 Package description	UninstallView		Paketbeschreibung
 Decline	PackageTextViewer		Ablehnen
-The file named '%s' already exits in the given path.\nReplace the file with the one from this package or skip it?	PackageView		Die Datei '%s' existiert bereits im Zielort.\nSoll sie mit der aus dem Paket ersetzt, oder übersprungen werden?
 All existing files will be skipped?	PackageView		Alle existierenden Dateien werden übersprungen?
 Continue	PackageInfo		Weiter
 %index% of %total%	PackageInstall		%index% von %total%
+The file named '%s' already exists in the given path.\nReplace the file with the one from this package or skip it?	PackageView		Eine Datei '%s' existiert bereits im angebenen Pfad.\nSoll es mit der Datei aus diesem Paket ersetzt oder übersprungen werden?
 The package you selected has been successfully removed from your system.	UninstallView		Das ausgewählte Paket wurde erfolgreich aus dem System entfernt.
 Abort	PackageInfo		Abbrechen
 PackageInstaller	System name		PackageInstaller
@@ -59,6 +58,7 @@ Begin	PackageView		Start
 OK	UninstallView		OK
 The symbolic link named '%s' already exists in the given path.\nReplace the link with the one from this package or skip it?	PackageView		Im benutzten Pfad existiert bereits ein symbolische Verknüpfung '%s'.\nSoll diese Verknüpfung mit der aus dem Paket ersetzt werden, oder soll dieser Schritt übersprungen werden?
 The selected package was not removed from your system. The given installed package information file might have been corrupted.	UninstallView		Das ausgewählte Paket konnte nicht entfernt werden. Die Infodatei der installierten Pakete könnte beschädigt sein.
+The script named '%s' already exists in the given path.\nReplace the script with the one from this package or skip it?	PackageView		Ein Skript '%s' existiert bereits im angebenen Pfad.\nSoll es mit dem Skript aus diesem Paket ersetzt oder übersprungen werden?
 Replace	PackageView		Ersetzen
 Installation progress	PackageView		Installationsverlauf
 The package file is not readable.\nOne of the possible reasons for this might be that the requested file is not a valid BeOS .pkg package.	PackageView		Das Paket ist nicht lesbar.\nDas ausgewählte Paket ist möglicherweise keine gültige BeOS .pkg Datei.

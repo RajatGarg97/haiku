@@ -61,7 +61,7 @@ char __dont_remove_copyright_from_binary[] = "Copyright (c) 2002-2006 Marcus "
 
 #include <AppMisc.h>
 #include <DataExchange.h>
-#include <debug.h>
+#include <MediaDebug.h>
 #include <DormantNodeManager.h>
 #include <MediaMisc.h>
 #include <MediaRosterEx.h>
@@ -3236,7 +3236,7 @@ BMediaRoster::GetFormatFor(const media_input& input, media_format* _format,
 	status_t rv;
 
 	request.dest = input.destination;
-	memset(&request.format, 0, sizeof(request.format)); // wildcard
+	request.format.Clear(); // wildcard
 
 	rv = QueryPort(input.destination.port, CONSUMER_ACCEPT_FORMAT, &request,
 		sizeof(request), &reply, sizeof(reply));

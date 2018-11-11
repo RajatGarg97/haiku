@@ -1,6 +1,7 @@
 /*
  * Copyright 2009-2010, Stephan Aßmus <superstippi@gmx.de>
  * Copyright 2014, Colin Günther <coling@gmx.de>
+ * Copyright 2018, Dario Casalinuovo
  * All rights reserved. Distributed under the terms of the GNU L-GPL license.
  */
 
@@ -46,17 +47,6 @@ extern "C" {
 #endif
 
 #define ERROR(a...) fprintf(stderr, a)
-
-#if LIBAVCODEC_VERSION_INT < ((54 << 16) | (50 << 8))
-#define AV_CODEC_ID_PCM_S16BE CODEC_ID_PCM_S16BE
-#define AV_CODEC_ID_PCM_S16LE CODEC_ID_PCM_S16LE
-#define AV_CODEC_ID_PCM_U16BE CODEC_ID_PCM_U16BE
-#define AV_CODEC_ID_PCM_U16LE CODEC_ID_PCM_U16LE
-#define AV_CODEC_ID_PCM_S8 CODEC_ID_PCM_S8
-#define AV_CODEC_ID_PCM_U8 CODEC_ID_PCM_U8
-#endif
-
-static const int64 kNoPTSValue = AV_NOPTS_VALUE;
 
 
 static uint32
@@ -222,10 +212,8 @@ StreamBase::StreamBase(BMediaIO* source, BLocker* sourceLock,
 
 StreamBase::~StreamBase()
 {
-	if (fContext != NULL)
-		avformat_close_input(&fContext);
+	avformat_close_input(&fContext);
 	av_free_packet(&fPacket);
-	av_free(fContext);
 	if (fIOContext != NULL)
 		av_free(fIOContext->buffer);
 	av_free(fIOContext);
@@ -406,9 +394,9 @@ StreamBase::FrameRate() const
 {
 	// TODO: Find a way to always calculate a correct frame rate...
 	double frameRate = 1.0;
-	switch (fStream->codec->codec_type) {
+	switch (fStream->codecpar->codec_type) {
 		case AVMEDIA_TYPE_AUDIO:
-			frameRate = (double)fStream->codec->sample_rate;
+			frameRate = (double)fStream->codecpar->sample_rate;
 			break;
 		case AVMEDIA_TYPE_VIDEO:
 			if (fStream->avg_frame_rate.den && fStream->avg_frame_rate.num)
@@ -417,10 +405,6 @@ StreamBase::FrameRate() const
 				frameRate = av_q2d(fStream->r_frame_rate);
 			else if (fStream->time_base.den && fStream->time_base.num)
 				frameRate = 1 / av_q2d(fStream->time_base);
-			else if (fStream->codec->time_base.den
-				&& fStream->codec->time_base.num) {
-				frameRate = 1 / av_q2d(fStream->codec->time_base);
-			}
 
 			// TODO: Fix up interlaced video for real
 			if (frameRate == 50.0f)
@@ -443,9 +427,18 @@ StreamBase::Duration() const
 	// for a couple of streams and are in line with the documentation, but
 	// unfortunately, libavformat itself seems to set the time_base and
 	// duration wrongly sometimes. :-(
-	if ((int64)fStream->duration != kNoPTSValue)
+
+	int32 flags;
+	fSource->GetFlags(&flags);
+
+	// "Mutable Size" (ie http streams) means we can't realistically compute
+	// a duration. So don't let ffmpeg giva (wrong) estimate in this case.
+	if ((flags & B_MEDIA_MUTABLE_SIZE) != 0)
+		return 0;
+
+	if ((int64)fStream->duration != AV_NOPTS_VALUE)
 		return _ConvertFromStreamTimeBase(fStream->duration);
-	else if ((int64)fContext->duration != kNoPTSValue)
+	else if ((int64)fContext->duration != AV_NOPTS_VALUE)
 		return (bigtime_t)fContext->duration;
 
 	return 0;
@@ -519,7 +512,7 @@ StreamBase::Seek(uint32 flags, int64* frame, bigtime_t* time)
 			// know where we really seeked.
 			fReusePacket = false;
 			if (_NextPacket(true) == B_OK) {
-				while (fPacket.pts == kNoPTSValue) {
+				while (fPacket.pts == AV_NOPTS_VALUE) {
 					fReusePacket = false;
 					if (_NextPacket(true) != B_OK)
 						return B_ERROR;
@@ -653,7 +646,7 @@ StreamBase::Seek(uint32 flags, int64* frame, bigtime_t* time)
 
 		fReusePacket = false;
 		if (_NextPacket(true) == B_OK) {
-			if (fPacket.pts != kNoPTSValue)
+			if (fPacket.pts != AV_NOPTS_VALUE)
 				foundTime = _ConvertFromStreamTimeBase(fPacket.pts);
 			else
 				TRACE_SEEK("  no PTS in packet after seeking\n");
@@ -689,12 +682,6 @@ StreamBase::GetNextChunk(const void** chunkBuffer,
 		return ret;
 	}
 
-	// NOTE: AVPacket has a field called "convergence_duration", for which
-	// the documentation is quite interesting. It sounds like it could be
-	// used to know the time until the next I-Frame in streams that don't
-	// let you know the position of keyframes in another way (like through
-	// the index).
-
 	// According to libavformat documentation, fPacket is valid until the
 	// next call to av_read_frame(). This is what we want and we can share
 	// the memory with the least overhead.
@@ -715,9 +702,9 @@ StreamBase::GetNextChunk(const void** chunkBuffer,
 		// series (even for videos that contain B-frames).
 		// \see http://git.videolan.org/?p=ffmpeg.git;a=blob;f=libavformat/avformat.h;h=1e8a6294890d580cd9ebc684eaf4ce57c8413bd8;hb=9153b33a742c4e2a85ff6230aea0e75f5a8b26c2#l1623
 		bigtime_t presentationTimeStamp;
-		if (fPacket.dts != kNoPTSValue)
+		if (fPacket.dts != AV_NOPTS_VALUE)
 			presentationTimeStamp = fPacket.dts;
-		else if (fPacket.pts != kNoPTSValue)
+		else if (fPacket.pts != AV_NOPTS_VALUE)
 			presentationTimeStamp = fPacket.pts;
 		else
 			presentationTimeStamp = lastStreamDTS;
@@ -751,7 +738,7 @@ StreamBase::GetNextChunk(const void** chunkBuffer,
 //	static bigtime_t lastPrintTime = system_time();
 //	static BLocker printLock;
 //	if (fStream->index < 2) {
-//		if (fPacket.pts != kNoPTSValue)
+//		if (fPacket.pts != AV_NOPTS_VALUE)
 //			pts[fStream->index] = _ConvertFromStreamTimeBase(fPacket.pts);
 //		printLock.Lock();
 //		bigtime_t now = system_time();
@@ -883,7 +870,7 @@ StreamBase::_ConvertToStreamTimeBase(bigtime_t time) const
 {
 	int64 timeStamp = int64_t((double)time * fStream->time_base.den
 		/ (1000000.0 * fStream->time_base.num) + 0.5);
-	if (fStream->start_time != kNoPTSValue)
+	if (fStream->start_time != AV_NOPTS_VALUE)
 		timeStamp += fStream->start_time;
 	return timeStamp;
 }
@@ -892,7 +879,7 @@ StreamBase::_ConvertToStreamTimeBase(bigtime_t time) const
 bigtime_t
 StreamBase::_ConvertFromStreamTimeBase(int64_t time) const
 {
-	if (fStream->start_time != kNoPTSValue)
+	if (fStream->start_time != AV_NOPTS_VALUE)
 		time -= fStream->start_time;
 
 	return bigtime_t(1000000.0 * time * fStream->time_base.num
@@ -970,32 +957,8 @@ AVFormatReader::Stream::Init(int32 virtualIndex)
 	if (ret != B_OK)
 		return ret;
 
-	// Get a pointer to the AVCodecContext for the stream at streamIndex.
-	AVCodecContext* codecContext = fStream->codec;
-
-#if 0
-// stippi: Here I was experimenting with the question if some fields of the
-// AVCodecContext change (or get filled out at all), if the AVCodec is opened.
-	class CodecOpener {
-	public:
-		CodecOpener(AVCodecContext* context)
-		{
-			fCodecContext = context;
-			AVCodec* codec = avcodec_find_decoder(context->codec_id);
-			fCodecOpen = avcodec_open(context, codec) >= 0;
-			if (!fCodecOpen)
-				TRACE("  failed to open the codec!\n");
-		}
-		~CodecOpener()
-		{
-			if (fCodecOpen)
-				avcodec_close(fCodecContext);
-		}
-	private:
-		AVCodecContext*		fCodecContext;
-		bool				fCodecOpen;
-	} codecOpener(codecContext);
-#endif
+	// Get a pointer to the AVCodecPaarameters for the stream at streamIndex.
+	AVCodecParameters* codecParams = fStream->codecpar;
 
 	// initialize the media_format for this stream
 	media_format* format = &fFormat;
@@ -1004,10 +967,10 @@ AVFormatReader::Stream::Init(int32 virtualIndex)
 	media_format_description description;
 
 	// Set format family and type depending on codec_type of the stream.
-	switch (codecContext->codec_type) {
+	switch (codecParams->codec_type) {
 		case AVMEDIA_TYPE_AUDIO:
-			if ((codecContext->codec_id >= AV_CODEC_ID_PCM_S16LE)
-				&& (codecContext->codec_id <= AV_CODEC_ID_PCM_U8)) {
+			if ((codecParams->codec_id >= AV_CODEC_ID_PCM_S16LE)
+				&& (codecParams->codec_id <= AV_CODEC_ID_PCM_U8)) {
 				TRACE("  raw audio\n");
 				format->type = B_MEDIA_RAW_AUDIO;
 				description.family = B_ANY_FORMAT_FAMILY;
@@ -1035,7 +998,7 @@ AVFormatReader::Stream::Init(int32 virtualIndex)
 
 	if (format->type == B_MEDIA_RAW_AUDIO) {
 		// We cannot describe all raw-audio formats, some are unsupported.
-		switch (codecContext->codec_id) {
+		switch (codecParams->codec_id) {
 			case AV_CODEC_ID_PCM_S16LE:
 				format->u.raw_audio.format
 					= media_raw_audio_format::B_AUDIO_SHORT;
@@ -1076,7 +1039,7 @@ AVFormatReader::Stream::Init(int32 virtualIndex)
 		}
 	} else {
 		if (description.family == B_MISC_FORMAT_FAMILY)
-			description.u.misc.codec = codecContext->codec_id;
+			description.u.misc.codec = codecParams->codec_id;
 
 		BMediaFormats formats;
 		status_t status = formats.GetFormatFor(description, format);
@@ -1084,7 +1047,7 @@ AVFormatReader::Stream::Init(int32 virtualIndex)
 			TRACE("  formats.GetFormatFor() error: %s\n", strerror(status));
 
 		format->user_data_type = B_CODEC_TYPE_INFO;
-		*(uint32*)format->user_data = codecContext->codec_tag;
+		*(uint32*)format->user_data = codecParams->codec_tag;
 		format->user_data[4] = 0;
 	}
 
@@ -1093,10 +1056,11 @@ AVFormatReader::Stream::Init(int32 virtualIndex)
 
 	switch (format->type) {
 		case B_MEDIA_RAW_AUDIO:
-			format->u.raw_audio.frame_rate = (float)codecContext->sample_rate;
-			format->u.raw_audio.channel_count = codecContext->channels;
-			format->u.raw_audio.channel_mask = codecContext->channel_layout;
-			ConvertAVSampleFormatToRawAudioFormat(codecContext->sample_fmt,
+			format->u.raw_audio.frame_rate = (float)codecParams->sample_rate;
+			format->u.raw_audio.channel_count = codecParams->channels;
+			format->u.raw_audio.channel_mask = codecParams->channel_layout;
+			ConvertAVSampleFormatToRawAudioFormat(
+				(AVSampleFormat)codecParams->format,
 				format->u.raw_audio.format);
 			format->u.raw_audio.buffer_size = 0;
 
@@ -1110,28 +1074,32 @@ AVFormatReader::Stream::Init(int32 virtualIndex)
 			break;
 
 		case B_MEDIA_ENCODED_AUDIO:
-			format->u.encoded_audio.bit_rate = codecContext->bit_rate;
-			format->u.encoded_audio.frame_size = codecContext->frame_size;
+			format->u.encoded_audio.bit_rate = codecParams->bit_rate;
+			format->u.encoded_audio.frame_size = codecParams->frame_size;
 			// Fill in some info about possible output format
 			format->u.encoded_audio.output
 				= media_multi_audio_format::wildcard;
 			format->u.encoded_audio.output.frame_rate
-				= (float)codecContext->sample_rate;
+				= (float)codecParams->sample_rate;
 			// Channel layout bits match in Be API and FFmpeg.
 			format->u.encoded_audio.output.channel_count
-				= codecContext->channels;
+				= codecParams->channels;
 			format->u.encoded_audio.multi_info.channel_mask
-				= codecContext->channel_layout;
+				= codecParams->channel_layout;
 			format->u.encoded_audio.output.byte_order
-				= avformat_to_beos_byte_order(codecContext->sample_fmt);
-			ConvertAVSampleFormatToRawAudioFormat(codecContext->sample_fmt,
+				= avformat_to_beos_byte_order(
+					(AVSampleFormat)codecParams->format);
+
+			ConvertAVSampleFormatToRawAudioFormat(
+					(AVSampleFormat)codecParams->format,
 				format->u.encoded_audio.output.format);
-			if (codecContext->block_align > 0) {
+
+			if (codecParams->block_align > 0) {
 				format->u.encoded_audio.output.buffer_size
-					= codecContext->block_align;
+					= codecParams->block_align;
 			} else {
 				format->u.encoded_audio.output.buffer_size
-					= codecContext->frame_size * codecContext->channels
+					= codecParams->frame_size * codecParams->channels
 						* (format->u.encoded_audio.output.format
 							& media_raw_audio_format::B_AUDIO_SIZE_MASK);
 			}
@@ -1140,9 +1108,9 @@ AVFormatReader::Stream::Init(int32 virtualIndex)
 		case B_MEDIA_ENCODED_VIDEO:
 // TODO: Specifying any of these seems to throw off the format matching
 // later on.
-//			format->u.encoded_video.avg_bit_rate = codecContext->bit_rate;
-//			format->u.encoded_video.max_bit_rate = codecContext->bit_rate
-//				+ codecContext->bit_rate_tolerance;
+//			format->u.encoded_video.avg_bit_rate = codecParams->bit_rate;
+//			format->u.encoded_video.max_bit_rate = codecParams->bit_rate
+//				+ codecParams->bit_rate_tolerance;
 
 //			format->u.encoded_video.encoding
 //				= media_encoded_video_format::B_ANY;
@@ -1156,24 +1124,24 @@ AVFormatReader::Stream::Init(int32 virtualIndex)
 
 			format->u.encoded_video.output.first_active = 0;
 			format->u.encoded_video.output.last_active
-				= codecContext->height - 1;
+				= codecParams->height - 1;
 				// TODO: Maybe libavformat actually provides that info
 				// somewhere...
 			format->u.encoded_video.output.orientation
 				= B_VIDEO_TOP_LEFT_RIGHT;
 
-			ConvertAVCodecContextToVideoAspectWidthAndHeight(*codecContext,
+			ConvertAVCodecParametersToVideoAspectWidthAndHeight(*codecParams,
 				format->u.encoded_video.output.pixel_width_aspect,
 				format->u.encoded_video.output.pixel_height_aspect);
 
 			format->u.encoded_video.output.display.format
-				= pixfmt_to_colorspace(codecContext->pix_fmt);
+				= pixfmt_to_colorspace(codecParams->format);
 			format->u.encoded_video.output.display.line_width
-				= codecContext->width;
+				= codecParams->width;
 			format->u.encoded_video.output.display.line_count
-				= codecContext->height;
-			TRACE("  width/height: %d/%d\n", codecContext->width,
-				codecContext->height);
+				= codecParams->height;
+			TRACE("  width/height: %d/%d\n", codecParams->width,
+				codecParams->height);
 			format->u.encoded_video.output.display.bytes_per_row = 0;
 			format->u.encoded_video.output.display.pixel_offset = 0;
 			format->u.encoded_video.output.display.line_offset = 0;
@@ -1187,17 +1155,17 @@ AVFormatReader::Stream::Init(int32 virtualIndex)
 	}
 
 	// Add the meta data, if any
-	if (codecContext->extradata_size > 0) {
-		format->SetMetaData(codecContext->extradata,
-			codecContext->extradata_size);
+	if (codecParams->extradata_size > 0) {
+		format->SetMetaData(codecParams->extradata,
+			codecParams->extradata_size);
 		TRACE("  extradata: %p\n", format->MetaData());
 	}
 
-	TRACE("  extradata_size: %d\n", codecContext->extradata_size);
-//	TRACE("  intra_matrix: %p\n", codecContext->intra_matrix);
-//	TRACE("  inter_matrix: %p\n", codecContext->inter_matrix);
-//	TRACE("  get_buffer(): %p\n", codecContext->get_buffer);
-//	TRACE("  release_buffer(): %p\n", codecContext->release_buffer);
+	TRACE("  extradata_size: %d\n", codecParams->extradata_size);
+//	TRACE("  intra_matrix: %p\n", codecParams->intra_matrix);
+//	TRACE("  inter_matrix: %p\n", codecParams->inter_matrix);
+//	TRACE("  get_buffer(): %p\n", codecParams->get_buffer);
+//	TRACE("  release_buffer(): %p\n", codecParams->release_buffer);
 
 #ifdef TRACE_AVFORMAT_READER
 	char formatString[512];
@@ -1237,7 +1205,7 @@ AVFormatReader::Stream::GetStreamInfo(int64* frameCount,
 	TRACE("  frameRate: %.4f\n", frameRate);
 
 	#ifdef TRACE_AVFORMAT_READER
-	if (fStream->start_time != kNoPTSValue) {
+	if (fStream->start_time != AV_NOPTS_VALUE) {
 		bigtime_t startTime = _ConvertFromStreamTimeBase(fStream->start_time);
 		TRACE("  start_time: %lld or %.5fs\n", startTime,
 			startTime / 1000000.0);
@@ -1276,7 +1244,7 @@ AVFormatReader::Stream::GetStreamInfo(int64* frameCount,
 	}
 	#endif
 
-	*frameCount = fStream->nb_frames * fStream->codec->frame_size;
+	*frameCount = fStream->nb_frames * fStream->codecpar->frame_size;
 	if (*frameCount == 0) {
 		// Calculate from duration and frame rate
 		*frameCount = (int64)(*duration * frameRate / 1000000LL);
@@ -1287,8 +1255,8 @@ AVFormatReader::Stream::GetStreamInfo(int64* frameCount,
 
 	*format = fFormat;
 
-	*infoBuffer = fStream->codec->extradata;
-	*infoSize = fStream->codec->extradata_size;
+	*infoBuffer = fStream->codecpar->extradata;
+	*infoSize = fStream->codecpar->extradata_size;
 
 	return B_OK;
 }

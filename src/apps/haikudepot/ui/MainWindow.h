@@ -10,6 +10,7 @@
 
 #include <Window.h>
 
+#include "TabView.h"
 #include "BulkLoadStateMachine.h"
 #include "Model.h"
 #include "PackageAction.h"
@@ -57,6 +58,8 @@ private:
 	virtual	Model*				GetModel();
 
 private:
+			bool				_SelectedPackageHasWebAppRepositoryCode();
+
 			void				_BuildMenu(BMenuBar* menuBar);
 			void				_BuildUserMenu(BMenuBar* menuBar);
 
@@ -73,6 +76,7 @@ private:
 			void				_RefreshRepositories(bool force);
 			void				_RefreshPackageList(bool force);
 
+			void				_PopulatePackageAsync(bool forcePopulate);
 			void				_StartRefreshWorker(bool force = false);
 	static	status_t			_RefreshModelThreadWorker(void* arg);
 	static	status_t			_PackageActionWorker(void* arg);
@@ -91,7 +95,7 @@ private:
 
 private:
 			FilterView*			fFilterView;
-			BCardLayout*		fListLayout;
+			TabView*			fListTabs;
 			FeaturedPackagesView* fFeaturedPackagesView;
 			PackageListView*	fPackageListView;
 			PackageInfoView*	fPackageInfoView;
@@ -127,6 +131,7 @@ private:
 
 			thread_id			fPopulatePackageWorker;
 			PackageInfoRef		fPackageToPopulate;
+			bool				fForcePopulatePackage;
 			BLocker				fPackageToPopulateLock;
 			sem_id				fPackageToPopulateSem;
 

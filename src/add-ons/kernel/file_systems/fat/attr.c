@@ -215,6 +215,7 @@ dosfs_read_attr(fs_volume *_vol, fs_vnode *_node, void *_cookie, off_t pos,
 {
 	nspace *vol = (nspace *)_vol->private_volume;
 	vnode *node = (vnode *)_node->private_node;
+	ssize_t length;
 
 	DPRINTF(0, ("dosfs_read_attr\n"));
 
@@ -233,11 +234,13 @@ dosfs_read_attr(fs_volume *_vol, fs_vnode *_node, void *_cookie, off_t pos,
 		return EINVAL;
 	}
 
-	if (user_strlcpy(buffer, node->mime + pos, *_length) < B_OK) {
+	length = user_strlcpy(buffer, node->mime + pos, *_length);
+	if (length < B_OK) {
 		UNLOCK_VOL(vol);
 		return B_BAD_ADDRESS;
 	}
-	*_length = strlen(buffer) + 1;
+	if (length < *_length)
+		*_length = length + 1;
 
 	UNLOCK_VOL(vol);
 	return 0;

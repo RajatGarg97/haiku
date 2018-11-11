@@ -243,7 +243,7 @@ public:
 protected:
 	virtual	uint32 ComputeHashValue() const
 	{
-		uint32 hash = *(uint32*)(&fInfo);
+		uint32 hash = reinterpret_cast<addr_t>(fInfo);
 		hash = hash * 19 + StringUtils::HashValue(fInfo->Expression());
 
 		return hash;
@@ -2800,11 +2800,9 @@ VariablesView::_AddTypeHandlerMenuIfNeeded(ModelNode* node,
 {
 	ValueNodeChild* child = node->NodeChild();
 
-	Type* type = child->GetType();
 	if (node->CountChildren() == 1 && node->ChildAt(0)->IsHidden()) {
 		node = node->ChildAt(0);
 		child = node->NodeChild();
-		type = child->GetType();
 	}
 
 	int32 handlerCount = TypeHandlerRoster::Default()->CountTypeHandlers(

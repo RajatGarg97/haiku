@@ -1,5 +1,5 @@
 /*
- * Copyright 2010-2016 Haiku Inc. All rights reserved.
+ * Copyright 2010-2018 Haiku Inc. All rights reserved.
  * Distributed under the terms of the MIT License.
  *
  * Authors:
@@ -29,6 +29,11 @@
 
 
 static const char* kArchivedUrl = "be:url string";
+
+/*! These flags can be combined to control the parse process. */
+
+const uint32 PARSE_NO_MASK_BIT				= 0x00000000;
+const uint32 PARSE_RAW_PATH_MASK_BIT		= 0x00000001;
 
 
 BUrl::BUrl(const char* url)
@@ -126,7 +131,12 @@ BUrl::BUrl(const BUrl& base, const BString& location)
 {
 	// This implements the algorithm in RFC3986, Section 5.2.
 
-	BUrl relative(location);
+	BUrl relative;
+	relative._ExplodeUrlString(location, PARSE_RAW_PATH_MASK_BIT);
+		// This parse will leave the path 'raw' so that it still carries any
+		// special sequences such as '..' and '.' in it.  This way it can be
+		// later combined with the base.
+
 	if (relative.HasProtocol()) {
 		SetProtocol(relative.Protocol());
 		if (relative.HasAuthority())
@@ -212,7 +222,7 @@ BUrl::~BUrl()
 BUrl&
 BUrl::SetUrlString(const BString& url)
 {
-	_ExplodeUrlString(url);
+	_ExplodeUrlString(url, PARSE_NO_MASK_BIT);
 	return *this;
 }
 
@@ -273,6 +283,18 @@ BUrl::SetPort(int port)
 }
 
 
+void
+BUrl::_RemoveLastPathComponent(BString& path)
+{
+	int32 outputLastSlashIdx = path.FindLast('/');
+
+	if (outputLastSlashIdx == B_ERROR)
+		path.Truncate(0);
+	else
+		path.Truncate(outputLastSlashIdx);
+}
+
+
 BUrl&
 BUrl::SetPath(const BString& path)
 {
@@ -283,57 +305,48 @@ BUrl::SetPath(const BString& path)
 	BString input(path);
 
 	// 2.
-	while(!input.IsEmpty())
-	{
+	while (!input.IsEmpty()) {
 		// 2.A.
-		if (input.StartsWith("./"))
-		{
+		if (input.StartsWith("./")) {
 			input.Remove(0, 2);
 			continue;
 		}
 
-		if (input.StartsWith("../"))
-		{
+		if (input.StartsWith("../")) {
 			input.Remove(0, 3);
 			continue;
 		}
 
 		// 2.B.
-		if (input.StartsWith("/./"))
-		{
+		if (input.StartsWith("/./")) {
 			input.Remove(0, 2);
 			continue;
 		}
 
-		if (input == "/.")
-		{
+		if (input == "/.") {
 			input.Remove(1, 1);
 			continue;
 		}
 
 		// 2.C.
-		if (input.StartsWith("/../"))
-		{
+		if (input.StartsWith("/../")) {
 			input.Remove(0, 3);
-			output.Truncate(output.FindLast('/'));
+			_RemoveLastPathComponent(output);
 			continue;
 		}
 
-		if (input == "/..")
-		{
+		if (input == "/..") {
 			input.Remove(1, 2);
-			output.Truncate(output.FindLast('/'));
+			_RemoveLastPathComponent(output);
 			continue;
 		}
 
 		// 2.D.
-		if (input == "." || input == "..")
-		{
+		if (input == "." || input == "..") {
 			break;
 		}
 
-		if (input == "/.")
-		{
+		if (input == "/.") {
 			input.Remove(1, 1);
 			continue;
 		}
@@ -506,11 +519,19 @@ BUrl::IsValid() const
 	if (!fHasProtocol)
 		return false;
 
+	if (!_IsProtocolValid())
+		return false;
+
+	// it is possible that there can be an authority but no host.
+	// wierd://tea:tree@/x
+	if (HasHost() && !(fHost.IsEmpty() && HasAuthority()) && !_IsHostValid())
+		return false;
+
 	if (fProtocol == "http" || fProtocol == "https" || fProtocol == "ftp"
 		|| fProtocol == "ipp" || fProtocol == "afp" || fProtocol == "telnet"
 		|| fProtocol == "gopher" || fProtocol == "nntp" || fProtocol == "sftp"
 		|| fProtocol == "finger" || fProtocol == "pop" || fProtocol == "imap") {
-		return fHasHost && !fHost.IsEmpty();
+		return HasHost() && !fHost.IsEmpty();
 	}
 
 	if (fProtocol == "file")
@@ -972,7 +993,7 @@ char_offset_until_fn_false(const char* url, int32 len, int32 offset,
  * This function takes a URL in string-form and parses the components of the URL out.
  */
 status_t
-BUrl::_ExplodeUrlString(const BString& url)
+BUrl::_ExplodeUrlString(const BString& url, uint32 flags)
 {
 	_ResetFields();
 
@@ -985,6 +1006,7 @@ BUrl::_ExplodeUrlString(const BString& url)
 	explode_url_parse_state state = EXPLODE_PROTOCOL;
 	int32 offset = 0;
 	int32 length = url.Length();
+	bool forceHasHost = false;
 	const char *url_c = url.String();
 
 	// The regexp is provided in RFC3986 (URI generic syntax), Appendix B
@@ -1034,6 +1056,9 @@ BUrl::_ExplodeUrlString(const BString& url)
 				// to parsing the path.
 				if (strncmp(&url_c[offset], "//", 2) == 0) {
 					state = EXPLODE_AUTHORITY;
+					// if we see the // then this would imply that a host is
+					// to be rendered even if no host has been parsed.
+					forceHasHost = true;
 					offset += 2;
 				} else {
 					state = EXPLODE_PATH;
@@ -1055,7 +1080,12 @@ BUrl::_ExplodeUrlString(const BString& url)
 			{
 				int end_path = char_offset_until_fn_false(url_c, length, offset,
 					explode_is_path_char);
-				SetPath(BString(&url_c[offset], end_path - offset));
+				BString path(&url_c[offset], end_path - offset);
+
+				if ((flags & PARSE_RAW_PATH_MASK_BIT) == 0)
+					SetPath(path);
+				else
+					_SetPathUnsafe(path);
 				state = EXPLODE_REQUEST;
 				offset = end_path;
 				break;
@@ -1069,6 +1099,10 @@ BUrl::_ExplodeUrlString(const BString& url)
 						offset, explode_is_request_char);
 					SetRequest(BString(&url_c[offset], end_request - offset));
 					offset = end_request;
+					// if there is a "?" in the parse then it is clear that
+					// there is a 'request' / query present regardless if there
+					// are any valid key-value pairs.
+					fHasRequest = true;
 				}
 				state = EXPLODE_FRAGMENT;
 				break;
@@ -1092,6 +1126,9 @@ BUrl::_ExplodeUrlString(const BString& url)
 		}
 	}
 
+	if (forceHasHost)
+		fHasHost = true;
+
 	return B_OK;
 }
 
@@ -1100,15 +1137,19 @@ BString
 BUrl::_MergePath(const BString& relative) const
 {
 	// This implements RFC3986, Section 5.2.3.
-	if (HasAuthority() && fPath == "")
-	{
+	if (HasAuthority() && fPath == "") {
 		BString result("/");
 		result << relative;
 		return result;
 	}
 
-	BString result(fPath);
-	result.Truncate(result.FindLast("/") + 1);
+	int32 lastSlashIndex = fPath.FindLast("/");
+
+	if (lastSlashIndex == B_ERROR)
+		return relative;
+
+	BString result;
+	result.SetTo(fPath, lastSlashIndex + 1);
 	result << relative;
 
 	return result;
@@ -1133,40 +1174,6 @@ enum authority_parse_state {
 	AUTHORITY_PORT,
 	AUTHORITY_COMPLETE
 };
-
-
-static bool
-authority_is_username_char(char c)
-{
-	return !(c == ':' || c == '@');
-}
-
-
-static bool
-authority_is_password_char(char c)
-{
-	return !(c == '@');
-}
-
-
-static bool
-authority_is_ipv6_host_char(char c) {
-	return (c >= 'A' && c <= 'F') || (c >= 'a' && c <= 'f')
-		|| (c >= '0' && c <= '9') || c == ':';
-}
-
-
-static bool
-authority_is_host_char(char c) {
-	return !(c == ':' || c == '/');
-}
-
-
-static bool
-authority_is_port_char(char c) {
-	return c >= '0' && c <= '9';
-}
-
 
 void
 BUrl::SetAuthority(const BString& authority)
@@ -1195,8 +1202,7 @@ BUrl::SetAuthority(const BString& authority)
 			{
 				if (hasUsernamePassword) {
 					int32 end_username = char_offset_until_fn_false(
-						authority_c, length, offset,
-						authority_is_username_char);
+						authority_c, length, offset, _IsUsernameChar);
 
 					SetUserName(BString(&authority_c[offset],
 						end_username - offset));
@@ -1214,8 +1220,7 @@ BUrl::SetAuthority(const BString& authority)
 				if (hasUsernamePassword && ':' == authority[offset]) {
 					offset++; // move past the delimiter
 					int32 end_password = char_offset_until_fn_false(
-						authority_c, length, offset,
-						authority_is_password_char);
+						authority_c, length, offset, _IsPasswordChar);
 
 					SetPassword(BString(&authority_c[offset],
 						end_password - offset));
@@ -1242,8 +1247,7 @@ BUrl::SetAuthority(const BString& authority)
 
 				if (authority_c[offset] == '[') {
 					int32 end_ipv6_host = char_offset_until_fn_false(
-						authority_c, length, offset + 1,
-						authority_is_ipv6_host_char);
+						authority_c, length, offset + 1, _IsIPV6Char);
 
 					if (authority_c[end_ipv6_host] == ']') {
 						SetHost(BString(&authority_c[offset],
@@ -1257,7 +1261,7 @@ BUrl::SetAuthority(const BString& authority)
 
 				if (AUTHORITY_HOST == state) {
 					int32 end_host = char_offset_until_fn_false(
-						authority_c, length, offset, authority_is_host_char);
+						authority_c, length, offset, _IsHostChar);
 
 					SetHost(BString(&authority_c[offset], end_host - offset));
 					state = AUTHORITY_PORT;
@@ -1272,7 +1276,7 @@ BUrl::SetAuthority(const BString& authority)
 				if (authority_c[offset] == ':') {
 					offset++;
 					int32 end_port = char_offset_until_fn_false(
-						authority_c, length, offset, authority_is_port_char);
+						authority_c, length, offset, _IsPortChar);
 					SetPort(atoi(&authority_c[offset]));
 					offset = end_port;
 				}
@@ -1355,7 +1359,50 @@ BUrl::_DoUrlDecodeChunk(const BString& chunk, bool strict)
 
 
 bool
-BUrl::_IsProtocolValid()
+BUrl::_IsHostIPV6Valid(size_t offset, int32 length) const
+{
+	for (int32 i = 0; i < length; i++) {
+		char c = fHost[offset + i];
+		if (!_IsIPV6Char(c))
+			return false;
+	}
+
+	return length > 0;
+}
+
+
+bool
+BUrl::_IsHostValid() const
+{
+	if (fHost.StartsWith("[") && fHost.EndsWith("]"))
+		return _IsHostIPV6Valid(1, fHost.Length() - 2);
+
+	bool lastWasDot = false;
+
+	for (int32 i = 0; i < fHost.Length(); i++) {
+		char c = fHost[i];
+
+		if (c == '.') {
+			if (lastWasDot || i == 0)
+				return false;
+			lastWasDot = true;
+		} else {
+			lastWasDot = false;
+		}
+
+		if (!_IsHostChar(c) && c != '.') {
+			// the underscore is technically not allowed, but occurs sometimes
+			// in the wild.
+			return false;
+		}
+	}
+
+	return true;
+}
+
+
+bool
+BUrl::_IsProtocolValid() const
 {
 	for (int8 index = 0; index < fProtocol.Length(); index++) {
 		char c = fProtocol[index];
@@ -1366,7 +1413,7 @@ BUrl::_IsProtocolValid()
 			return false;
 	}
 
-	return fProtocol.Length() > 0;
+	return !fProtocol.IsEmpty();
 }
 
 
@@ -1391,6 +1438,42 @@ BUrl::_IsSubDelim(char c)
 	return c == '!' || c == '$' || c == '&' || c == '\'' || c == '('
 		|| c == ')' || c == '*' || c == '+' || c == ',' || c == ';'
 		|| c == '=';
+}
+
+
+bool
+BUrl::_IsUsernameChar(char c)
+{
+	return !(c == ':' || c == '@');
+}
+
+
+bool
+BUrl::_IsPasswordChar(char c)
+{
+	return !(c == '@');
+}
+
+
+bool
+BUrl::_IsHostChar(char c)
+{
+	return ((uint8) c) > 127 || isalnum(c) || c == '-' || c == '_' || c == '.'
+		|| c == '%';
+}
+
+
+bool
+BUrl::_IsPortChar(char c)
+{
+	return isdigit(c);
+}
+
+
+bool
+BUrl::_IsIPV6Char(char c)
+{
+	return c == ':' || isxdigit(c);
 }
 
 

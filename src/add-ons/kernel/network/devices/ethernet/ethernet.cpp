@@ -241,7 +241,9 @@ ethernet_control(net_device *_device, int32 op, void *argument,
 	size_t length)
 {
 	ethernet_device *device = (ethernet_device *)_device;
-	return ioctl(device->fd, op, argument, length);
+	if (ioctl(device->fd, op, argument, length) < 0)
+		return errno;
+	return B_OK;
 }
 
 
@@ -398,7 +400,9 @@ ethernet_add_multicast(struct net_device *_device, const sockaddr *_address)
 	if (address->sdl_type != IFT_ETHER)
 		return B_BAD_VALUE;
 
-	return ioctl(device->fd, ETHER_ADDMULTI, LLADDR(address), 6);
+	if (ioctl(device->fd, ETHER_ADDMULTI, LLADDR(address), 6) < 0)
+		return errno;
+	return B_OK;
 }
 
 
@@ -414,7 +418,9 @@ ethernet_remove_multicast(struct net_device *_device, const sockaddr *_address)
 	if (address->sdl_type != IFT_ETHER)
 		return B_BAD_VALUE;
 
-	return ioctl(device->fd, ETHER_REMMULTI, LLADDR(address), 6);
+	if (ioctl(device->fd, ETHER_REMMULTI, LLADDR(address), 6) < 0)
+		return errno;
+	return B_OK;
 }
 
 
